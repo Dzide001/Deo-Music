@@ -1,0 +1,5 @@
+Lcom/deox9/musicplayer/MainActivity;
+Lcom/deox9/musicplayer/player/PlaybackService;
+Lcom/deox9/musicplayer/player/storage/PlaybackSessionRepository;
+Lcom/deox9/musicplayer/library/LocalMusicRepository;
+Lcom/deox9/musicplayer/settings/AppSettingsRepository;

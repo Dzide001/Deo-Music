@@ -56,6 +56,7 @@ dependencies {
 
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.2")
     implementation("androidx.activity:activity-compose:1.9.0")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")
@@ -71,6 +72,15 @@ dependencies {
 
     // Web playback mode container (browser-like tab)
     implementation("androidx.webkit:webkit:1.11.0")
+
+    // Persistence
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    // Image loading
+    implementation("io.coil-kt:coil-compose:2.6.0")
+
+    // Runtime baseline profile installer
+    implementation("androidx.profileinstaller:profileinstaller:1.3.1")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
