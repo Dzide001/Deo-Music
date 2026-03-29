@@ -79,6 +79,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.text.font.FontWeight
@@ -93,6 +94,8 @@ import com.deox9.musicplayer.library.GenreInfo
 import com.deox9.musicplayer.library.FolderInfo
 import com.deox9.musicplayer.library.RecommendationSignals
 import com.deox9.musicplayer.library.RecommendationSignalsRepository
+import com.deox9.musicplayer.lyrics.LyricsData
+import com.deox9.musicplayer.lyrics.LyricsRepository
 import com.deox9.musicplayer.player.PlaybackService
 import com.deox9.musicplayer.player.storage.PlaybackSessionEntity
 import com.deox9.musicplayer.player.storage.PlaybackSessionRepository
@@ -1679,6 +1682,7 @@ private fun ExpandedNowPlayingScreen(
     val context = LocalContext.current
     val favRepo = remember { FavouritesRepository(context) }
     val localRepo = remember { LocalMusicRepository(context) }
+    val lyricsRepository = remember { LyricsRepository(context) }
     val settingsRepository = remember { AppSettingsRepository(context) }
     val appSettings by settingsRepository.observe().collectAsState(initial = AppSettings())
     val currentTrackUri = session?.uri ?: ""
@@ -1716,9 +1720,28 @@ private fun ExpandedNowPlayingScreen(
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
     var availablePlaylists by remember { mutableStateOf<List<PlaylistInfo>>(emptyList()) }
+    var fetchedLyrics by remember { mutableStateOf<LyricsData?>(null) }
+    var lyricsLoading by remember { mutableStateOf(false) }
 
     LaunchedEffect(session?.positionMs, session?.durationMs) {
         sliderPosition = (session?.positionMs ?: 0L).coerceIn(0L, durationMs).toFloat()
+    }
+
+    LaunchedEffect(showLyricsPanel, currentTrackUri, session?.title, session?.artist, session?.album, session?.durationMs) {
+        if (!showLyricsPanel || currentTrackUri.isBlank()) {
+            return@LaunchedEffect
+        }
+        lyricsLoading = true
+        fetchedLyrics = withContext(Dispatchers.IO) {
+            lyricsRepository.getLyrics(
+                trackKey = currentTrackUri,
+                title = session?.title.orEmpty(),
+                artist = session?.artist.orEmpty(),
+                album = session?.album.orEmpty(),
+                durationMs = session?.durationMs ?: 0L
+            )
+        }
+        lyricsLoading = false
     }
 
     Column(
@@ -2196,20 +2219,69 @@ private fun ExpandedNowPlayingScreen(
                         if (session == null) {
                             Text("Start playback to open lyrics.")
                         } else {
-                            Text(
-                                text = session.title,
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = session.artist,
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                            HorizontalDivider()
-                            Text(
-                                text = lyricCredits ?: "No embedded lyric credits found for this track.",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 320.dp)
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = session.title,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = session.artist,
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                                HorizontalDivider()
+
+                                if (lyricsLoading) {
+                                    Text("Fetching lyrics...")
+                                }
+
+                                val lyrics = fetchedLyrics
+                                if (lyrics != null && lyrics.syncedLines.isNotEmpty()) {
+                                    val activeLine = currentSyncedLyricLine(
+                                        lines = lyrics.syncedLines,
+                                        positionMs = session.positionMs
+                                    )
+                                    Text(
+                                        text = "Synced lyrics${if (lyrics.cached) " (cached)" else ""}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    if (!activeLine.isNullOrBlank()) {
+                                        Text(
+                                            text = activeLine,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                    lyrics.syncedLines.forEach { line ->
+                                        Text(
+                                            text = line.text,
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                    }
+                                } else if (lyrics != null && lyrics.plainLyrics.isNotBlank()) {
+                                    Text(
+                                        text = "Lyrics${if (lyrics.cached) " (cached)" else ""}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = lyrics.plainLyrics,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                } else {
+                                    Text(
+                                        text = lyricCredits ?: "No lyrics found yet. You can search web or try again later.",
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                            }
                         }
                     }
                 },
@@ -2442,6 +2514,11 @@ private fun extractLyricCredits(context: Context, trackUri: String): String? {
 
         if (lines.isEmpty()) null else lines.joinToString("\n")
     }.getOrNull()
+}
+
+private fun currentSyncedLyricLine(lines: List<com.deox9.musicplayer.lyrics.SyncedLyricLine>, positionMs: Long): String? {
+    if (lines.isEmpty()) return null
+    return lines.lastOrNull { it.timeMs <= positionMs }?.text ?: lines.firstOrNull()?.text
 }
 
 @Composable
