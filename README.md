@@ -1,27 +1,77 @@
-# Music Player (Android First)
+# Deo Music
 
-Initial Android implementation scaffold using free/open-source components:
+A feature-rich Android music player built with Kotlin and Jetpack Compose, supporting local library playback and web streaming.
 
-- Kotlin + Jetpack Compose
-- Android Media3 (ExoPlayer + MediaSessionService)
-- Web playback tab for browser-like streaming mode
+## Features
 
-## Current Status
+- **Local Library Playback**: Browse and play music from your device (MediaStore)
+- **Web Streaming**: Tab-based web playback for browser-like streaming mode
+- **Queue Management**: Drag-to-reorder queue, persistent playback state
+- **Settings**: Customize app behavior and playback preferences
+- **Performance**: Optimized for smooth UI with lazy loading and background filtering
+- **Signed Release**: Production-ready signed APK and AAB bundles
 
-- App shell with bottom navigation (`Library`, `Web`)
-- `PlaybackService` scaffold using Media3
-- Basic WebView playback screen
-- Build system configured for Android Studio
+## Current Version
 
-## Open in Android Studio
+**v0.1.0** — Initial release with core playback features
 
-1. Open this folder as a project.
-2. Let Gradle sync complete.
-3. Run on Android phone/tablet emulator (API 26+).
+## Technology Stack
 
-## Next Steps
+- **Language**: Kotlin
+- **UI Framework**: Jetpack Compose
+- **Playback Engine**: Android Media3 (ExoPlayer)
+- **Persistence**: DataStore Preferences
+- **Web Integration**: Android WebView with custom client (ad/tracker blocking)
 
-- Implement local library scan via MediaStore
-- Wire `Library` screen to play selected tracks through `PlaybackService`
-- Add queue persistence and resume
-- Add provider contracts and resolver module
+## Installation
+
+### From Source
+
+1. Clone the repository
+2. Open in Android Studio
+3. Let Gradle sync complete
+4. Run on Android device/emulator (API 26+)
+
+### Pre-built Release
+
+Download the signed APK or AAB from the [releases](releases/) folder:
+
+- **APK**: Direct install on your device
+- **AAB**: For publishing to Google Play Store
+
+## Building a Release
+
+### Prerequisites
+
+A signing keystore must be set up locally. See [keystore.properties.example](keystore.properties.example) for configuration.
+
+### Build Commands
+
+```bash
+# Build unsigned debug APK
+./gradlew assembleDebug
+
+# Build signed release APK + AAB
+./scripts/build_signed_release_android.sh
+```
+
+Artifacts will be in `app/build/outputs/`.
+
+## Project Structure
+
+```text
+app/
+├── src/main/
+│   ├── java/com/deox9/musicplayer/
+│   │   ├── MainActivity.kt (main UI shell)
+│   │   ├── library/ (local music library features)
+│   │   ├── playback/ (playback state and services)
+│   │   ├── settings/ (app preferences)
+│   │   └── web/ (web playback features)
+│   └── res/ (resources, icons, strings)
+└── build.gradle.kts (app config)
+```
+
+## License
+
+Proprietary — Deo Music
