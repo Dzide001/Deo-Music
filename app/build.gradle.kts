@@ -27,6 +27,8 @@ val hasReleaseSigning =
         !releaseKeyAlias.isNullOrBlank() &&
         !releaseKeyPassword.isNullOrBlank()
 
+val releaseVersionName = "v0.1.0"
+
 android {
     namespace = "com.deox9.musicplayer"
     compileSdk = 35
@@ -36,7 +38,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "v0.1.0"
+        versionName = releaseVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -85,6 +87,16 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+
+    applicationVariants.all {
+        if (buildType.name == "release") {
+            outputs.all {
+                @Suppress("DEPRECATION")
+                val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+                output.outputFileName = "Deo-Music-${releaseVersionName}.apk"
+            }
         }
     }
 }
