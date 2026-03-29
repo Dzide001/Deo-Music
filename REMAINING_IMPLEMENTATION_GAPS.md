@@ -108,51 +108,36 @@
 
 ---
 
-### ⚠️ **PARTIALLY COMPLETE (needs minor enhancements)**
+### ✅ **RECENTLY COMPLETED (previous gaps now implemented)**
 
 #### Album Art in Expanded Now Playing (Section 5.2)
-**Current State**: Placeholder text "Album Artwork" (not showing actual art)
 
-**Gap**: The expanded Now Playing screen doesn't display actual album art. It shows a placeholder box instead of loading the album artwork thumbnail.
-
-**Fix Needed**: Replace placeholder with actual AsyncImage loading from MediaStore or track metadata.
-
-#### Web Results Thumbnails
-**Current State**: Results are displayed but thumbnails may not always load
-
-**Gap**: YouTube/video thumbnails not reliably showing in web results list
-
-**Fix Needed**: Ensure video thumbnail URLs are properly extracted and displayed via AsyncImage
-
----
-
-### ❌ **NOT IMPLEMENTED (Spec items missing or incomplete)**
+- ✅ Expanded Now Playing now renders real album art via `AsyncImage` using persisted `albumArtUri` metadata.
 
 #### Auto-Expand Behaviour (Section 5.3)
-**Gap**: The expanded view doesn't automatically open when a new track starts playing that replaces the current queue.
 
-**Current**: User must manually tap the mini-bar to expand.
-
-**Fix Needed**: Add logic to detect queue replacement (vs queue append) and auto-expand the Now Playing screen.
+- ✅ Auto-expand now triggers when queue replacement is detected.
+- ✅ Queue-append operations are ignored to avoid unwanted expansion.
 
 #### More Actions Menu (Section 5.2 top bar)
-**Current**: Has a generic "More options" button but no actual menu
 
-**Gap**: No "Add to playlist", "Share", "Go to artist", "View album", "Delete" options in the expanded view
+- ✅ Added full More actions dropdown with:
+    - Add to playlist
+    - Go to artist
+    - View album
+    - Share
+    - Delete (for local `content://` tracks)
 
-**Fix Needed**: Implement MoreVert dropdown menu with these actions
+#### Web Results Thumbnails
 
-#### Now Playing Artwork Auto-Expand Detection
-**Gap**: The specification states: "When a track is played (from any list), the expanded view opens automatically if the track replaces the current queue."
-
-**Current**: This is not implemented. The expanded view only opens when user manually taps the mini-bar.
+- ✅ Web playback relies on native YouTube mobile results page rendering in `WebView`, where thumbnails are rendered by the site itself.
 
 ---
 
 ### 📊 **Implementation Completeness Matrix**
 
 | Spec Section | Feature | Status | Notes |
-|------------|---------|--------|-------|
+| --- | --- | --- | --- |
 | 1-2 | Layout & Footer | ✅ Complete | 3 regions + mode switch |
 | 3.1 | Category Tabs | ✅ Complete | All 7 tabs functional |
 | 3.2.1 | Songs Tab | ✅ Complete | Sorting + search working |
@@ -165,20 +150,17 @@
 | 4 | Web/YouTube View | ✅ Complete | Search + results + ad-blocking |
 | 5.1 | Mini-bar | ✅ Complete | All controls |
 | 5.2 | Expanded View (Controls) | ✅ Complete | All playback controls |
-| 5.2 | Expanded View (Artwork) | ⚠️ Partial | Placeholder only |
-| 5.2 | More Actions Menu | ❌ Missing | Generic button only |
-| 5.3 | Auto-Expand | ❌ Missing | Manual tap required |
-| 5.3 | Queue vs Append Behaviour | ⚠️ Partial | Queue append works, replace not auto-expanding |
+| 5.2 | Expanded View (Artwork) | ✅ Complete | AsyncImage artwork rendering |
+| 5.2 | More Actions Menu | ✅ Complete | Full action menu implemented |
+| 5.3 | Auto-Expand | ✅ Complete | Opens on queue replacement |
+| 5.3 | Queue vs Append Behaviour | ✅ Complete | Replacement detected, append ignored |
 | 6 | Global Elements | ✅ Complete | All sections |
 
 ---
 
 ### 🎯 **Priority Fixes (Ranked)**
 
-1. **HIGH**: Album artwork display in expanded Now Playing (5.2)
-2. **MEDIUM**: Auto-expand on queue replacement (5.3)
-3. **MEDIUM**: More actions menu in expanded view (5.2 top bar)
-4. **LOW**: Web thumbnail reliability
+All previously tracked high/medium gaps are complete in the current build.
 
 ---
 

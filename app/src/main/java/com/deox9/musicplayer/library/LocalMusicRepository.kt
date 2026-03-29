@@ -1,7 +1,9 @@
 package com.deox9.musicplayer.library
 
 import android.content.ContentUris
+import android.content.ContentValues
 import android.content.Context
+import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import java.io.File
@@ -397,6 +399,60 @@ class LocalMusicRepository(
         return getTracks(limit = 5000)
             .filter { extractFolder(it.contentUri) == folderPath }
             .sortedBy { it.title.lowercase() }
+    }
+
+    fun createPlaylist(name: String): Long? {
+        if (name.isBlank()) return null
+        return runCatching {
+            val values = ContentValues().apply {
+                put(MediaStore.Audio.Playlists.NAME, name.trim())
+            }
+            val uri = context.contentResolver.insert(
+                MediaStore.Audio.Playlists.EXTERNAL_CONTENT_URI,
+                values
+            )
+            uri?.lastPathSegment?.toLongOrNull()
+        }.getOrNull()
+    }
+
+    fun addTrackToPlaylist(playlistId: Long, trackContentUri: String): Boolean {
+        val audioId = runCatching { ContentUris.parseId(Uri.parse(trackContentUri)) }.getOrNull() ?: return false
+        return runCatching {
+            val membersUri = MediaStore.Audio.Playlists.Members.getContentUri("external", playlistId)
+            val nextPlayOrder = nextPlaylistPlayOrder(playlistId)
+            val values = ContentValues().apply {
+                put(MediaStore.Audio.Playlists.Members.AUDIO_ID, audioId)
+                put(MediaStore.Audio.Playlists.Members.PLAY_ORDER, nextPlayOrder)
+            }
+            context.contentResolver.insert(membersUri, values) != null
+        }.getOrDefault(false)
+    }
+
+    fun deleteTrack(trackContentUri: String): Boolean {
+        return runCatching {
+            val deleted = context.contentResolver.delete(Uri.parse(trackContentUri), null, null) > 0
+            if (deleted) {
+                invalidateCaches()
+            }
+            deleted
+        }.getOrDefault(false)
+    }
+
+    private fun nextPlaylistPlayOrder(playlistId: Long): Int {
+        val membersUri = MediaStore.Audio.Playlists.Members.getContentUri("external", playlistId)
+        context.contentResolver.query(
+            membersUri,
+            arrayOf(MediaStore.Audio.Playlists.Members.PLAY_ORDER),
+            null,
+            null,
+            "${MediaStore.Audio.Playlists.Members.PLAY_ORDER} DESC"
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val playOrderCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Playlists.Members.PLAY_ORDER)
+                return cursor.getInt(playOrderCol) + 1
+            }
+        }
+        return 0
     }
 
     private fun extractFolder(contentUri: String): String {

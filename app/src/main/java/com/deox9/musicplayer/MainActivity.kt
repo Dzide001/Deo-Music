@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.widget.Toast
 import android.view.Choreographer
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -177,6 +178,7 @@ private fun AppRoot() {
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
     var showQueueSheet by rememberSaveable { mutableStateOf(false) }
     var prevQueueSize by rememberSaveable { mutableStateOf(0) }
+    var prevQueueSignature by rememberSaveable { mutableStateOf("") }
     var suppressAutoExpand by rememberSaveable { mutableStateOf(false) }
     var didInitQueueSnapshot by rememberSaveable { mutableStateOf(false) }
     var didSendRestoreIntent by rememberSaveable { mutableStateOf(false) }
@@ -247,36 +249,49 @@ private fun AppRoot() {
     }
 
     // Auto-expand Now Playing when queue is replaced (not appended)
-    LaunchedEffect(session?.queue?.size) {
+    LaunchedEffect(session?.updatedAtMs) {
         session?.let { currentSession ->
             if (currentSession.queue.isEmpty()) {
                 prevQueueSize = 0
+                prevQueueSignature = ""
                 suppressAutoExpand = false
                 didInitQueueSnapshot = false
                 return@let
             }
 
+            val currentQueueUris = currentSession.queue.map { it.uri }
+            val currentSignature = currentQueueUris.joinToString("|")
+
             if (!didInitQueueSnapshot) {
                 prevQueueSize = currentSession.queue.size
+                prevQueueSignature = currentSignature
                 didInitQueueSnapshot = true
                 return@let
             }
 
             if (suppressAutoExpand) {
                 prevQueueSize = currentSession.queue.size
+                prevQueueSignature = currentSignature
                 return@let
             }
 
             if (currentSession.queue.isNotEmpty()) {
                 val currentQueueSize = currentSession.queue.size
-                // If queue size decreased or is significantly different, it was likely replaced
-                if (prevQueueSize > 0 && currentQueueSize < prevQueueSize) {
-                    showNowPlaying = true
-                } else if (prevQueueSize == 0 && currentQueueSize > 0) {
-                    // First queue item added
+                val isAppend =
+                    prevQueueSignature.isNotBlank() &&
+                        currentQueueSize >= prevQueueSize &&
+                        currentQueueUris.take(prevQueueSize).joinToString("|") == prevQueueSignature
+                val replacedQueue =
+                    prevQueueSize > 0 &&
+                        currentSignature != prevQueueSignature &&
+                        !isAppend
+
+                if (replacedQueue) {
                     showNowPlaying = true
                 }
+
                 prevQueueSize = currentQueueSize
+                prevQueueSignature = currentSignature
             }
         }
     }
@@ -352,7 +367,23 @@ private fun AppRoot() {
                     showNowPlaying = false
                     suppressAutoExpand = true
                 },
-                onOpenQueue = { showQueueSheet = true }
+                onOpenQueue = { showQueueSheet = true },
+                onGoToArtist = { artistName ->
+                    mode = RootMode.LocalDevice
+                    localTab = LocalCategoryTab.Songs
+                    localSearchQuery = artistName
+                    appliedLocalSearchQuery = artistName
+                    showNowPlaying = false
+                    suppressAutoExpand = true
+                },
+                onViewAlbum = { albumName ->
+                    mode = RootMode.LocalDevice
+                    localTab = LocalCategoryTab.Albums
+                    localSearchQuery = albumName
+                    appliedLocalSearchQuery = albumName
+                    showNowPlaying = false
+                    suppressAutoExpand = true
+                }
             )
         } else {
             Box(
@@ -1641,10 +1672,13 @@ private fun MiniPlayerBar(
 private fun ExpandedNowPlayingScreen(
     session: PlaybackSessionEntity?,
     onMinimize: () -> Unit,
-    onOpenQueue: () -> Unit
+    onOpenQueue: () -> Unit,
+    onGoToArtist: (String) -> Unit,
+    onViewAlbum: (String) -> Unit
 ) {
     val context = LocalContext.current
     val favRepo = remember { FavouritesRepository(context) }
+    val localRepo = remember { LocalMusicRepository(context) }
     val settingsRepository = remember { AppSettingsRepository(context) }
     val appSettings by settingsRepository.observe().collectAsState(initial = AppSettings())
     val currentTrackUri = session?.uri ?: ""
@@ -1677,6 +1711,11 @@ private fun ExpandedNowPlayingScreen(
     val shuffleEnabled = session?.shuffleEnabled ?: false
     val repeatMode = session?.repeatMode ?: 0
     var showMoreMenu by remember { mutableStateOf(false) }
+    var showAddToPlaylistDialog by remember { mutableStateOf(false) }
+    var showCreatePlaylistDialog by remember { mutableStateOf(false) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    var newPlaylistName by remember { mutableStateOf("") }
+    var availablePlaylists by remember { mutableStateOf<List<PlaylistInfo>>(emptyList()) }
 
     LaunchedEffect(session?.positionMs, session?.durationMs) {
         sliderPosition = (session?.positionMs ?: 0L).coerceIn(0L, durationMs).toFloat()
@@ -1731,28 +1770,58 @@ private fun ExpandedNowPlayingScreen(
                         text = { Text("Add to playlist") },
                         onClick = {
                             showMoreMenu = false
-                            // TODO: Implement add to playlist
+                            if (session?.uri.isNullOrBlank()) return@DropdownMenuItem
+                            scope.launch {
+                                availablePlaylists = withContext(Dispatchers.IO) {
+                                    localRepo.getPlaylists()
+                                }
+                                showAddToPlaylistDialog = true
+                            }
                         }
                     )
                     DropdownMenuItem(
                         text = { Text("Go to artist") },
                         onClick = {
                             showMoreMenu = false
-                            // TODO: Implement go to artist
+                            val artistName = session?.artist.orEmpty().trim()
+                            if (artistName.isNotBlank()) {
+                                onGoToArtist(artistName)
+                            }
                         }
                     )
                     DropdownMenuItem(
                         text = { Text("View album") },
                         onClick = {
                             showMoreMenu = false
-                            // TODO: Implement view album
+                            val albumName = session?.album.orEmpty().trim()
+                            if (albumName.isNotBlank()) {
+                                onViewAlbum(albumName)
+                            }
                         }
                     )
                     DropdownMenuItem(
                         text = { Text("Share") },
                         onClick = {
                             showMoreMenu = false
-                            // TODO: Implement share
+                            val shareText = buildString {
+                                append("Now playing: ${session?.title.orEmpty()}")
+                                if (!session?.artist.isNullOrBlank()) {
+                                    append(" by ${session?.artist.orEmpty()}")
+                                }
+                                if (!session?.uri.isNullOrBlank()) {
+                                    append("\n${session?.uri.orEmpty()}")
+                                }
+                            }
+                            runCatching {
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, shareText)
+                                }
+                                context.startActivity(
+                                    Intent.createChooser(shareIntent, "Share track")
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            }
                         }
                     )
                     if (session?.uri?.startsWith("content://") == true) {
@@ -1760,7 +1829,7 @@ private fun ExpandedNowPlayingScreen(
                             text = { Text("Delete") },
                             onClick = {
                                 showMoreMenu = false
-                                // TODO: Implement delete local track
+                                showDeleteConfirmDialog = true
                             }
                         )
                     }
@@ -1973,6 +2042,149 @@ private fun ExpandedNowPlayingScreen(
             onClick = onMinimize
         ) {
             Text("Minimize player (or swipe down)")
+        }
+
+        if (showAddToPlaylistDialog) {
+            AlertDialog(
+                onDismissRequest = { showAddToPlaylistDialog = false },
+                title = { Text("Add to playlist") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (availablePlaylists.isEmpty()) {
+                            Text("No playlists found. Create one first.")
+                        } else {
+                            availablePlaylists.forEach { playlist ->
+                                OutlinedButton(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onClick = {
+                                        val trackUri = session?.uri.orEmpty()
+                                        if (trackUri.isBlank()) return@OutlinedButton
+                                        scope.launch {
+                                            val added = withContext(Dispatchers.IO) {
+                                                localRepo.addTrackToPlaylist(playlist.id, trackUri)
+                                            }
+                                            Toast
+                                                .makeText(
+                                                    context,
+                                                    if (added) "Added to ${playlist.name}" else "Could not add to playlist",
+                                                    Toast.LENGTH_SHORT
+                                                )
+                                                .show()
+                                            showAddToPlaylistDialog = false
+                                        }
+                                    }
+                                ) {
+                                    Text(playlist.name)
+                                }
+                            }
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        showAddToPlaylistDialog = false
+                        showCreatePlaylistDialog = true
+                    }) {
+                        Text("Create new")
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showAddToPlaylistDialog = false }) {
+                        Text("Close")
+                    }
+                }
+            )
+        }
+
+        if (showCreatePlaylistDialog) {
+            AlertDialog(
+                onDismissRequest = { showCreatePlaylistDialog = false },
+                title = { Text("Create playlist") },
+                text = {
+                    OutlinedTextField(
+                        value = newPlaylistName,
+                        onValueChange = { newPlaylistName = it },
+                        label = { Text("Playlist name") },
+                        singleLine = true
+                    )
+                },
+                dismissButton = {
+                    TextButton(onClick = { showCreatePlaylistDialog = false }) {
+                        Text("Cancel")
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = newPlaylistName.isNotBlank(),
+                        onClick = {
+                            val trackUri = session?.uri.orEmpty()
+                            if (trackUri.isBlank()) return@TextButton
+                            scope.launch {
+                                val playlistId = withContext(Dispatchers.IO) {
+                                    localRepo.createPlaylist(newPlaylistName.trim())
+                                }
+                                val added = if (playlistId != null) {
+                                    withContext(Dispatchers.IO) {
+                                        localRepo.addTrackToPlaylist(playlistId, trackUri)
+                                    }
+                                } else {
+                                    false
+                                }
+                                Toast
+                                    .makeText(
+                                        context,
+                                        if (added) "Playlist created and track added" else "Could not create playlist",
+                                        Toast.LENGTH_SHORT
+                                    )
+                                    .show()
+                                showCreatePlaylistDialog = false
+                                newPlaylistName = ""
+                            }
+                        }
+                    ) {
+                        Text("Create")
+                    }
+                }
+            )
+        }
+
+        if (showDeleteConfirmDialog) {
+            AlertDialog(
+                onDismissRequest = { showDeleteConfirmDialog = false },
+                title = { Text("Delete track") },
+                text = { Text("This will delete the local audio file from your device.") },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteConfirmDialog = false }) {
+                        Text("Cancel")
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            val trackUri = session?.uri.orEmpty()
+                            if (trackUri.isBlank()) return@TextButton
+                            scope.launch {
+                                val deleted = withContext(Dispatchers.IO) {
+                                    localRepo.deleteTrack(trackUri)
+                                }
+                                Toast
+                                    .makeText(
+                                        context,
+                                        if (deleted) "Track deleted" else "Could not delete track",
+                                        Toast.LENGTH_SHORT
+                                    )
+                                    .show()
+                                showDeleteConfirmDialog = false
+                                if (deleted) {
+                                    onMinimize()
+                                }
+                            }
+                        }
+                    ) {
+                        Text("Delete")
+                    }
+                }
+            )
         }
 
         if (showLyricsPanel) {
