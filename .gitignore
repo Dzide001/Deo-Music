@@ -14,3 +14,8 @@ local.properties
 *.log
 tmp/
 backups/
+
+# Signing secrets
+*.jks
+*.keystore
+keystore.properties
