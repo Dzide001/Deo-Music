@@ -38,6 +38,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.DropdownMenu
@@ -52,6 +54,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -113,6 +117,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import coil.compose.AsyncImage
@@ -1671,6 +1676,7 @@ private fun MiniPlayerBar(
     HorizontalDivider()
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ExpandedNowPlayingScreen(
     session: PlaybackSessionEntity?,
@@ -1727,8 +1733,10 @@ private fun ExpandedNowPlayingScreen(
         sliderPosition = (session?.positionMs ?: 0L).coerceIn(0L, durationMs).toFloat()
     }
 
-    LaunchedEffect(showLyricsPanel, currentTrackUri, session?.title, session?.artist, session?.album, session?.durationMs) {
-        if (!showLyricsPanel || currentTrackUri.isBlank()) {
+    LaunchedEffect(currentTrackUri, session?.title, session?.artist, session?.album, session?.durationMs) {
+        if (currentTrackUri.isBlank()) {
+            fetchedLyrics = null
+            lyricsLoading = false
             return@LaunchedEffect
         }
         lyricsLoading = true
@@ -1743,6 +1751,8 @@ private fun ExpandedNowPlayingScreen(
         }
         lyricsLoading = false
     }
+
+    val nowPlayingPagerState = rememberPagerState(pageCount = { 2 })
 
     Column(
         modifier = Modifier
@@ -1861,27 +1871,89 @@ private fun ExpandedNowPlayingScreen(
         }
 
         Spacer(modifier = Modifier.height(20.dp))
-        Box(
+        TabRow(selectedTabIndex = nowPlayingPagerState.currentPage) {
+            Tab(
+                selected = nowPlayingPagerState.currentPage == 0,
+                onClick = { scope.launch { nowPlayingPagerState.animateScrollToPage(0) } },
+                text = { Text("Artwork") }
+            )
+            Tab(
+                selected = nowPlayingPagerState.currentPage == 1,
+                onClick = { scope.launch { nowPlayingPagerState.animateScrollToPage(1) } },
+                text = { Text("Synced Lyrics") }
+            )
+        }
+        HorizontalPager(
+            state = nowPlayingPagerState,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(260.dp)
                 .background(
                     MaterialTheme.colorScheme.surfaceVariant,
                     shape = RoundedCornerShape(12.dp)
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            if (session?.albumArtUri?.isNotBlank() == true) {
-                AsyncImage(
-                    model = session.albumArtUri,
-                    contentDescription = "Album art for ${session.title}",
+                )
+                .clip(RoundedCornerShape(12.dp))
+        ) { page ->
+            if (page == 0) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (session?.albumArtUri?.isNotBlank() == true) {
+                        AsyncImage(
+                            model = session.albumArtUri,
+                            contentDescription = "Album art for ${session.title}",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Text("♪", style = MaterialTheme.typography.displayLarge)
+                    }
+                }
+            } else {
+                val lyrics = fetchedLyrics
+                Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .clip(RoundedCornerShape(12.dp)),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                Text("♪", style = MaterialTheme.typography.displayLarge)
+                        .padding(12.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    when {
+                        lyricsLoading -> Text("Loading synced lyrics...")
+                        lyrics != null && lyrics.syncedLines.isNotEmpty() -> {
+                            val activeLine = currentSyncedLyricLine(
+                                lines = lyrics.syncedLines,
+                                positionMs = session?.positionMs ?: 0L
+                            )
+                            if (!activeLine.isNullOrBlank()) {
+                                Text(
+                                    text = activeLine,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                HorizontalDivider()
+                            }
+                            lyrics.syncedLines.forEach { line ->
+                                val isActive = line.text == activeLine
+                                Text(
+                                    text = line.text,
+                                    style = if (isActive) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal
+                                )
+                            }
+                        }
+                        lyrics != null && lyrics.plainLyrics.isNotBlank() -> {
+                            Text(text = lyrics.plainLyrics, style = MaterialTheme.typography.bodyMedium)
+                        }
+                        else -> {
+                            Text(
+                                text = "No synced lyrics available for this track yet.",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+                }
             }
         }
 
@@ -2060,11 +2132,16 @@ private fun ExpandedNowPlayingScreen(
             }
         }
         Spacer(modifier = Modifier.height(12.dp))
-        OutlinedButton(
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            onClick = onMinimize
+            horizontalArrangement = Arrangement.End
         ) {
-            Text("Minimize player (or swipe down)")
+            IconButton(onClick = onMinimize) {
+                Icon(
+                    imageVector = Icons.Filled.KeyboardArrowDown,
+                    contentDescription = "Minimize"
+                )
+            }
         }
 
         if (showAddToPlaylistDialog) {
