@@ -2982,6 +2982,7 @@ private fun WebPlaybackScreen(searchQuery: String = "") {
     var fallbackTriggered by rememberSaveable { mutableStateOf(false) }
     var webViewSavedState by rememberSaveable { mutableStateOf<Bundle?>(null) }
     var restoredFromSavedState by rememberSaveable { mutableStateOf(false) }
+    var currentWebUrl by rememberSaveable { mutableStateOf("") }
 
     val fallbackHomeUrl = remember(appSettings.webHomeUrl) {
         normalizeWebUrl(appSettings.webHomeUrl) ?: AppSettingsRepository.DEFAULT_WEB_HOME
@@ -3001,8 +3002,11 @@ private fun WebPlaybackScreen(searchQuery: String = "") {
                         loadUrl(fallbackHomeUrl)
                     }
                 },
-                onPageSuccess = {
+                onPageSuccess = { pageUrl ->
                     lastLoadError = null
+                    if (!pageUrl.isNullOrBlank()) {
+                        currentWebUrl = pageUrl
+                    }
                     injectYouTubeAdSkipper(webView = this)
                 }
             )
@@ -3018,7 +3022,11 @@ private fun WebPlaybackScreen(searchQuery: String = "") {
                 restoreState(state)
             }
             if (restored == null) {
-                loadUrl(AppSettingsRepository.DEFAULT_WEB_HOME)
+                val bootUrl = when {
+                    currentWebUrl.isNotBlank() -> currentWebUrl
+                    else -> AppSettingsRepository.DEFAULT_WEB_HOME
+                }
+                loadUrl(bootUrl)
             } else {
                 restoredFromSavedState = true
             }
@@ -3027,7 +3035,12 @@ private fun WebPlaybackScreen(searchQuery: String = "") {
 
     LaunchedEffect(appSettings.webHomeUrl) {
         val homeUrl = normalizeWebUrl(appSettings.webHomeUrl) ?: AppSettingsRepository.DEFAULT_WEB_HOME
-        if (searchQuery.trim().length < 2 && !restoredFromSavedState) {
+        val currentUrl = webView.url.orEmpty()
+        if (
+            searchQuery.trim().length < 2 &&
+            !restoredFromSavedState &&
+            (currentUrl.isBlank() || currentUrl == "about:blank")
+        ) {
             fallbackTriggered = false
             webView.loadUrl(homeUrl)
         }
@@ -3038,8 +3051,13 @@ private fun WebPlaybackScreen(searchQuery: String = "") {
         if (query.length >= 2) {
             delay(350)
             val encoded = URLEncoder.encode(query, Charsets.UTF_8.name())
+            val target = "https://m.youtube.com/results?search_query=$encoded"
+            val current = webView.url.orEmpty()
+            if (current.contains("m.youtube.com/results") && current.contains("search_query=$encoded")) {
+                return@LaunchedEffect
+            }
             fallbackTriggered = false
-            webView.loadUrl("https://m.youtube.com/results?search_query=$encoded")
+            webView.loadUrl(target)
         }
     }
 
@@ -3104,7 +3122,7 @@ private fun sendPlaybackIntent(context: Context, intent: Intent) {
 private class HardenedWebViewClient(
     private val onBlocked: (String) -> Unit,
     private val onMainFrameError: (Int, String) -> Unit,
-    private val onPageSuccess: () -> Unit
+    private val onPageSuccess: (String?) -> Unit
 ) : WebViewClient() {
     override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
         val url = request?.url ?: return super.shouldInterceptRequest(view, request)
@@ -3129,7 +3147,7 @@ private class HardenedWebViewClient(
 
     override fun onPageFinished(view: WebView?, url: String?) {
         super.onPageFinished(view, url)
-        onPageSuccess()
+        onPageSuccess(url)
     }
 }
 
