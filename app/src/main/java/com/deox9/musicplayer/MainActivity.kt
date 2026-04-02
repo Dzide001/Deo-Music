@@ -193,6 +193,8 @@ private fun AppRoot() {
     var didInitQueueSnapshot by rememberSaveable { mutableStateOf(false) }
     var didSendRestoreIntent by rememberSaveable { mutableStateOf(false) }
     var showPerfOverlay by rememberSaveable { mutableStateOf(false) }
+    var webPlaybackView by remember { mutableStateOf<WebView?>(null) }
+    var lastPausedWebForLocalUri by rememberSaveable { mutableStateOf("") }
 
     val songsListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     val albumsListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
@@ -306,6 +308,20 @@ private fun AppRoot() {
         }
     }
 
+    // Keep web playback active across mode switches, but pause it once local playback starts.
+    LaunchedEffect(session?.updatedAtMs) {
+        val currentSession = session ?: return@LaunchedEffect
+        val localTrackStarted =
+            currentSession.isPlaying &&
+                currentSession.uri.startsWith("content://") &&
+                currentSession.uri != lastPausedWebForLocalUri
+
+        if (localTrackStarted) {
+            pauseWebPlayback(webPlaybackView)
+            lastPausedWebForLocalUri = currentSession.uri
+        }
+    }
+
     if (showNowPlaying) {
         BackHandler {
             showNowPlaying = false
@@ -401,54 +417,56 @@ private fun AppRoot() {
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
-                when (mode) {
-                    RootMode.LocalDevice -> {
-                        Column(modifier = Modifier.fillMaxSize()) {
-                            LocalCategoryTabs(
-                                selected = localTab,
-                                onSelect = { localTab = it }
-                            )
-                            Box(modifier = Modifier.weight(1f)) {
-                                when (localTab) {
-                                    LocalCategoryTab.Songs -> LibraryScreen(
-                                        searchQuery = appliedLocalSearchQuery,
-                                        sortOption = songSortOption,
-                                        listState = songsListState
-                                    )
-                                    LocalCategoryTab.Albums -> AlbumsScreen(
-                                        searchQuery = appliedLocalSearchQuery,
-                                        sortOption = albumSortOption,
-                                        listState = albumsListState
-                                    )
-                                    LocalCategoryTab.Playlists -> PlaylistsScreen(
-                                        searchQuery = appliedLocalSearchQuery,
-                                        sortOption = collectionSortOption,
-                                        listState = playlistsListState
-                                    )
-                                    LocalCategoryTab.Folders -> FoldersScreen(
-                                        searchQuery = appliedLocalSearchQuery,
-                                        sortOption = collectionSortOption,
-                                        listState = foldersListState
-                                    )
-                                    LocalCategoryTab.Genres -> GenresScreen(
-                                        searchQuery = appliedLocalSearchQuery,
-                                        sortOption = collectionSortOption,
-                                        listState = genresListState
-                                    )
-                                    LocalCategoryTab.Suggested -> SuggestedScreen(
-                                        listState = suggestedListState
-                                    )
-                                    LocalCategoryTab.Favourites -> FavouritesScreen(
-                                        searchQuery = appliedLocalSearchQuery,
-                                        sortOption = songSortOption,
-                                        listState = favouritesListState
-                                    )
-                                }
+                WebPlaybackScreen(
+                    searchQuery = webSearchQuery,
+                    isVisible = mode == RootMode.WebPlayback,
+                    onWebViewReady = { webPlaybackView = it }
+                )
+
+                if (mode == RootMode.LocalDevice) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        LocalCategoryTabs(
+                            selected = localTab,
+                            onSelect = { localTab = it }
+                        )
+                        Box(modifier = Modifier.weight(1f)) {
+                            when (localTab) {
+                                LocalCategoryTab.Songs -> LibraryScreen(
+                                    searchQuery = appliedLocalSearchQuery,
+                                    sortOption = songSortOption,
+                                    listState = songsListState
+                                )
+                                LocalCategoryTab.Albums -> AlbumsScreen(
+                                    searchQuery = appliedLocalSearchQuery,
+                                    sortOption = albumSortOption,
+                                    listState = albumsListState
+                                )
+                                LocalCategoryTab.Playlists -> PlaylistsScreen(
+                                    searchQuery = appliedLocalSearchQuery,
+                                    sortOption = collectionSortOption,
+                                    listState = playlistsListState
+                                )
+                                LocalCategoryTab.Folders -> FoldersScreen(
+                                    searchQuery = appliedLocalSearchQuery,
+                                    sortOption = collectionSortOption,
+                                    listState = foldersListState
+                                )
+                                LocalCategoryTab.Genres -> GenresScreen(
+                                    searchQuery = appliedLocalSearchQuery,
+                                    sortOption = collectionSortOption,
+                                    listState = genresListState
+                                )
+                                LocalCategoryTab.Suggested -> SuggestedScreen(
+                                    listState = suggestedListState
+                                )
+                                LocalCategoryTab.Favourites -> FavouritesScreen(
+                                    searchQuery = appliedLocalSearchQuery,
+                                    sortOption = songSortOption,
+                                    listState = favouritesListState
+                                )
                             }
                         }
                     }
-
-                    RootMode.WebPlayback -> WebPlaybackScreen(searchQuery = webSearchQuery)
                 }
             }
         }
@@ -3440,7 +3458,11 @@ private fun AlbumDetailScreen(album: Album, onBack: () -> Unit) {
 }
 
 @Composable
-private fun WebPlaybackScreen(searchQuery: String = "") {
+private fun WebPlaybackScreen(
+    searchQuery: String = "",
+    isVisible: Boolean,
+    onWebViewReady: (WebView) -> Unit
+) {
     val context = LocalContext.current
     val settingsRepository = remember { AppSettingsRepository(context) }
     val appSettings by settingsRepository.observe().collectAsState(initial = AppSettings())
@@ -3458,6 +3480,7 @@ private fun WebPlaybackScreen(searchQuery: String = "") {
 
     val webView = remember {
         WebView(context).apply {
+            onWebViewReady(this)
             isFocusable = true
             isFocusableInTouchMode = true
             requestFocus()
@@ -3548,42 +3571,44 @@ private fun WebPlaybackScreen(searchQuery: String = "") {
 
     Box(modifier = Modifier.fillMaxSize()) {
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
+            modifier = if (isVisible) Modifier.fillMaxSize() else Modifier.size(1.dp),
             factory = { webView }
         )
 
-        Column(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(10.dp)
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f), RoundedCornerShape(10.dp))
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text(
-                text = "Ad-filter blocks: $blockedRequestCount",
-                style = MaterialTheme.typography.labelMedium
-            )
-            if (!lastBlockedHost.isNullOrBlank()) {
+        if (isVisible) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(10.dp)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
                 Text(
-                    text = "Last blocked: $lastBlockedHost",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = "Ad-filter blocks: $blockedRequestCount",
+                    style = MaterialTheme.typography.labelMedium
                 )
-            }
-            if (!lastLoadError.isNullOrBlank()) {
-                Text(
-                    text = lastLoadError.orEmpty(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.error
-                )
-                TextButton(
-                    onClick = {
-                        fallbackTriggered = false
-                        webView.reload()
+                if (!lastBlockedHost.isNullOrBlank()) {
+                    Text(
+                        text = "Last blocked: $lastBlockedHost",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (!lastLoadError.isNullOrBlank()) {
+                    Text(
+                        text = lastLoadError.orEmpty(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    TextButton(
+                        onClick = {
+                            fallbackTriggered = false
+                            webView.reload()
+                        }
+                    ) {
+                        Text("Retry")
                     }
-                ) {
-                    Text("Retry")
                 }
             }
         }
@@ -3664,6 +3689,22 @@ private fun injectYouTubeAdSkipper(webView: WebView) {
         """.trimIndent()
 
         webView.evaluateJavascript(script, null)
+}
+
+private fun pauseWebPlayback(webView: WebView?) {
+    if (webView == null) return
+    val script = """
+        (function() {
+            const mediaNodes = document.querySelectorAll('video, audio');
+            mediaNodes.forEach(function(node) {
+                try {
+                    node.pause();
+                    node.muted = true;
+                } catch (e) {}
+            });
+        })();
+    """.trimIndent()
+    webView.evaluateJavascript(script, null)
 }
 
 private fun shouldBlockWebResource(rawUrl: String): Boolean {
