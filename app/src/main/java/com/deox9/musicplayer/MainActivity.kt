@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -133,6 +134,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.ui.platform.LocalConfiguration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -1720,6 +1722,7 @@ private fun ExpandedNowPlayingScreen(
     var playerVolume by remember { mutableStateOf(session?.playerVolume ?: 1f) }
     val shuffleEnabled = session?.shuffleEnabled ?: false
     val repeatMode = session?.repeatMode ?: 0
+    val isCompactWidth = LocalConfiguration.current.screenWidthDp < 600
     var showMoreMenu by remember { mutableStateOf(false) }
     var showAddToPlaylistDialog by remember { mutableStateOf(false) }
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
@@ -2018,68 +2021,143 @@ private fun ExpandedNowPlayingScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedButton(
-                enabled = session != null,
-                onClick = {
-                    val intent = Intent(context, PlaybackService::class.java).apply {
-                        action = PlaybackService.ACTION_SKIP_PREV
-                    }
-                    sendPlaybackIntent(context, intent)
-                },
-                modifier = Modifier.weight(1f)
-            ) { Text("Prev") }
-            OutlinedButton(
-                enabled = session != null,
-                onClick = {
-                    val intent = Intent(context, PlaybackService::class.java).apply {
-                        action = PlaybackService.ACTION_TOGGLE_SHUFFLE
-                    }
-                    sendPlaybackIntent(context, intent)
-                },
-                modifier = Modifier.weight(1f)
-            ) { Text(if (shuffleEnabled) "🔀 ON" else "🔀") }
-            OutlinedButton(
-                enabled = session != null,
-                onClick = {
-                    val intent = Intent(context, PlaybackService::class.java).apply {
-                        action = PlaybackService.ACTION_TOGGLE_PLAY_PAUSE
-                    }
-                    sendPlaybackIntent(context, intent)
-                },
-                modifier = Modifier.weight(1f)
-            ) { Text(if (isPlaying) "Pause" else "Play") }
-            OutlinedButton(
-                enabled = session != null,
-                onClick = {
-                    val intent = Intent(context, PlaybackService::class.java).apply {
-                        action = PlaybackService.ACTION_CYCLE_REPEAT
-                    }
-                    sendPlaybackIntent(context, intent)
-                },
-                modifier = Modifier.weight(1f)
+        if (isCompactWidth) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text(
-                    when (repeatMode) {
+                IconActionButton(
+                    modifier = Modifier.weight(1f),
+                    enabled = session != null,
+                    symbol = "⏮",
+                    contentDescription = "Previous",
+                    onClick = {
+                        val intent = Intent(context, PlaybackService::class.java).apply {
+                            action = PlaybackService.ACTION_SKIP_PREV
+                        }
+                        sendPlaybackIntent(context, intent)
+                    }
+                )
+                IconActionButton(
+                    modifier = Modifier.weight(1f),
+                    enabled = session != null,
+                    symbol = if (shuffleEnabled) "🔀" else "↺",
+                    contentDescription = "Shuffle",
+                    selected = shuffleEnabled,
+                    onClick = {
+                        val intent = Intent(context, PlaybackService::class.java).apply {
+                            action = PlaybackService.ACTION_TOGGLE_SHUFFLE
+                        }
+                        sendPlaybackIntent(context, intent)
+                    }
+                )
+                IconActionButton(
+                    modifier = Modifier.weight(1f),
+                    enabled = session != null,
+                    symbol = if (isPlaying) "⏸" else "▶",
+                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    selected = isPlaying,
+                    onClick = {
+                        val intent = Intent(context, PlaybackService::class.java).apply {
+                            action = PlaybackService.ACTION_TOGGLE_PLAY_PAUSE
+                        }
+                        sendPlaybackIntent(context, intent)
+                    }
+                )
+                IconActionButton(
+                    modifier = Modifier.weight(1f),
+                    enabled = session != null,
+                    symbol = when (repeatMode) {
                         0 -> "🔁"
-                        1 -> "🔁₁"
-                        else -> "🔁∞"
+                        1 -> "①"
+                        else -> "∞"
+                    },
+                    contentDescription = "Repeat",
+                    selected = repeatMode != 0,
+                    onClick = {
+                        val intent = Intent(context, PlaybackService::class.java).apply {
+                            action = PlaybackService.ACTION_CYCLE_REPEAT
+                        }
+                        sendPlaybackIntent(context, intent)
+                    }
+                )
+                IconActionButton(
+                    modifier = Modifier.weight(1f),
+                    enabled = session != null,
+                    symbol = "⏭",
+                    contentDescription = "Next",
+                    onClick = {
+                        val intent = Intent(context, PlaybackService::class.java).apply {
+                            action = PlaybackService.ACTION_SKIP_NEXT
+                        }
+                        sendPlaybackIntent(context, intent)
                     }
                 )
             }
-            OutlinedButton(
-                enabled = session != null,
-                onClick = {
-                    val intent = Intent(context, PlaybackService::class.java).apply {
-                        action = PlaybackService.ACTION_SKIP_NEXT
-                    }
-                    sendPlaybackIntent(context, intent)
-                },
-                modifier = Modifier.weight(1f)
-            ) { Text("Next") }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    enabled = session != null,
+                    onClick = {
+                        val intent = Intent(context, PlaybackService::class.java).apply {
+                            action = PlaybackService.ACTION_SKIP_PREV
+                        }
+                        sendPlaybackIntent(context, intent)
+                    },
+                    modifier = Modifier.weight(1f)
+                ) { Text("Prev") }
+                OutlinedButton(
+                    enabled = session != null,
+                    onClick = {
+                        val intent = Intent(context, PlaybackService::class.java).apply {
+                            action = PlaybackService.ACTION_TOGGLE_SHUFFLE
+                        }
+                        sendPlaybackIntent(context, intent)
+                    },
+                    modifier = Modifier.weight(1f)
+                ) { Text(if (shuffleEnabled) "🔀 ON" else "🔀") }
+                OutlinedButton(
+                    enabled = session != null,
+                    onClick = {
+                        val intent = Intent(context, PlaybackService::class.java).apply {
+                            action = PlaybackService.ACTION_TOGGLE_PLAY_PAUSE
+                        }
+                        sendPlaybackIntent(context, intent)
+                    },
+                    modifier = Modifier.weight(1f)
+                ) { Text(if (isPlaying) "Pause" else "Play") }
+                OutlinedButton(
+                    enabled = session != null,
+                    onClick = {
+                        val intent = Intent(context, PlaybackService::class.java).apply {
+                            action = PlaybackService.ACTION_CYCLE_REPEAT
+                        }
+                        sendPlaybackIntent(context, intent)
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        when (repeatMode) {
+                            0 -> "🔁"
+                            1 -> "🔁₁"
+                            else -> "🔁∞"
+                        }
+                    )
+                }
+                OutlinedButton(
+                    enabled = session != null,
+                    onClick = {
+                        val intent = Intent(context, PlaybackService::class.java).apply {
+                            action = PlaybackService.ACTION_SKIP_NEXT
+                        }
+                        sendPlaybackIntent(context, intent)
+                    },
+                    modifier = Modifier.weight(1f)
+                ) { Text("Next") }
+            }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -2131,7 +2209,7 @@ private fun ExpandedNowPlayingScreen(
                 )
             }
         }
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(8.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.End
@@ -2591,6 +2669,30 @@ private fun extractLyricCredits(context: Context, trackUri: String): String? {
 
         if (lines.isEmpty()) null else lines.joinToString("\n")
     }.getOrNull()
+}
+
+@Composable
+private fun IconActionButton(
+    modifier: Modifier = Modifier,
+    enabled: Boolean,
+    symbol: String,
+    contentDescription: String,
+    onClick: () -> Unit,
+    selected: Boolean = false
+) {
+    OutlinedButton(
+        modifier = modifier,
+        enabled = enabled,
+        onClick = onClick,
+        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
+    ) {
+        Text(
+            text = symbol,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }
 
 private fun currentSyncedLyricLine(lines: List<com.deox9.musicplayer.lyrics.SyncedLyricLine>, positionMs: Long): String? {
