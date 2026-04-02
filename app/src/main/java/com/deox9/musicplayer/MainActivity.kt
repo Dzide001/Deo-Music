@@ -3356,6 +3356,13 @@ private fun WebPlaybackScreen(searchQuery: String = "") {
 
     val webView = remember {
         WebView(context).apply {
+            isFocusable = true
+            isFocusableInTouchMode = true
+            requestFocus()
+            setOnTouchListener { view, _ ->
+                view.requestFocus()
+                false
+            }
             webViewClient = HardenedWebViewClient(
                 onBlocked = { blockedUrl ->
                     blockedRequestCount += 1
@@ -3543,23 +3550,11 @@ private fun injectYouTubeAdSkipper(webView: WebView) {
                         clickIfVisible(document.querySelector('button[aria-label*="Skip" i]'));
                         clickIfVisible(document.querySelector('button[aria-label*="Close" i]'));
 
-                        // If ad markers are active, jump ad segment and mute quickly
-                        const isAd = !!document.querySelector('.ad-showing, .ytp-ad-player-overlay, .video-ads, .ytm-ad-interrupting');
                         const video = document.querySelector('video');
-                        if (isAd && video) {
-                            try {
-                                video.muted = true;
-                                if (Number.isFinite(video.duration) && video.duration > 0) {
-                                    video.currentTime = Math.max(video.duration - 0.25, 0);
-                                } else {
-                                    video.playbackRate = 16;
-                                }
-                            } catch (e) {}
-                        } else if (video) {
-                            try { video.playbackRate = 1; } catch (e) {}
+                        if (video) {
+                            try { video.muted = false; } catch (e) {}
                         }
                     }
-
                     window.__deoAdSkipTimer = setInterval(skipAds, 400);
                     document.addEventListener('visibilitychange', skipAds, { passive: true });
                     skipAds();
@@ -3596,7 +3591,7 @@ private fun shouldBlockWebResource(rawUrl: String): Boolean {
         "bat.bing.com", "c.bing.com",
         
         // YouTube specific tracking
-        "youtube.com/api", "yt-video-upload", "youtubei.googleapis.com"
+        "yt-video-upload"
     )
 
     if (adNetworks.any { host.contains(it) }) return true
