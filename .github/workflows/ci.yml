@@ -1,0 +1,93 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GRADLE_OPTS: -Dorg.gradle.daemon=false
+
+jobs:
+  build:
+    name: Lint, analyse, test, assemble
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Static analysis (detekt + ktlint rules)
+        run: ./gradlew detekt
+
+      - name: Unit tests
+        run: ./gradlew testFossDebugUnitTest testFullDebugUnitTest
+
+      - name: Android Lint
+        run: ./gradlew lintFossDebug lintFullDebug
+
+      - name: Assemble both flavours
+        run: ./gradlew assembleFossDebug assembleFullDebug
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: |
+            build/reports/detekt/
+            app/build/reports/
+          retention-days: 7
+
+      - name: Upload FOSS APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-foss-debug
+          path: app/build/outputs/apk/foss/debug/*.apk
+          retention-days: 14
+
+  foss-purity:
+    name: Verify FOSS flavour is clean
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
+
+      # F-Droid will reject the build if any of these reach the foss flavour.
+      # Failing here is cheaper than failing review weeks later.
+      - name: Assert no proprietary dependencies in the foss flavour
+        run: |
+          ./gradlew :app:dependencies --configuration fossDebugRuntimeClasspath > deps.txt
+          if grep -Ei 'com\.google\.android\.gms|com\.google\.firebase|play-services|com\.google\.mlkit' deps.txt; then
+            echo "::error::Proprietary dependency found in the foss flavour"
+            exit 1
+          fi
+          echo "foss flavour is clean"
