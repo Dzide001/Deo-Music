@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.MusicPlayer" parent="android:Theme.DeviceDefault.DayNight" />
+    <!--
+      Base theme for API 26-28. android:Theme.DeviceDefault.DayNight only exists
+      from API 29, so referencing it here failed to inflate on Android 8.0-9.0.
+      The DayNight variant is applied via values-v29.
+    -->
+    <style name="Theme.MusicPlayer" parent="android:Theme.DeviceDefault" />
 </resources>
