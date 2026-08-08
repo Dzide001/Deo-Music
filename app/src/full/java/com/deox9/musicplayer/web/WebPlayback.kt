@@ -34,7 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.deox9.musicplayer.feature.settings.SettingsViewModel
 import com.deox9.musicplayer.settings.AppSettingsRepository
 import kotlinx.coroutines.delay

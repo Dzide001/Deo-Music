@@ -26,10 +26,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -68,7 +72,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.deox9.musicplayer.feature.library.AlbumsScreen
 import com.deox9.musicplayer.feature.library.FavouritesScreen
 import com.deox9.musicplayer.feature.library.FoldersScreen
@@ -334,36 +338,43 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
     Scaffold(
         topBar = {
             if (!showNowPlaying) {
-                AppHeader(
-                    mode = mode,
-                    localTab = localTab,
-                    localSearchQuery = localSearchQuery,
-                    webSearchQuery = webSearchQuery,
-                    onLocalSearchChange = { localSearchQuery = it },
-                    onWebSearchChange = { webSearchQuery = it },
-                    showSortMenu = showSortMenu,
-                    onShowSortMenuChange = { showSortMenu = it },
-                    onOpenSettings = { showSettingsSheet = true },
-                    songSortOption = songSortOption,
-                    albumSortOption = albumSortOption,
-                    onSongSortChange = {
-                        songSortOption = it
-                        showSortMenu = false
-                    },
-                    onAlbumSortChange = {
-                        albumSortOption = it
-                        showSortMenu = false
-                    },
-                    collectionSortOption = collectionSortOption,
-                    onCollectionSortChange = {
-                        collectionSortOption = it
-                        showSortMenu = false
-                    }
-                )
+                // The app draws edge to edge (enforced from targetSdk 35), so the
+                // header must inset itself past the status bar. Without this the
+                // header sits underneath it and the status bar swallows taps —
+                // which made the Settings button unreachable on-device.
+                Box(modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars)) {
+                    AppHeader(
+                        mode = mode,
+                        localTab = localTab,
+                        localSearchQuery = localSearchQuery,
+                        webSearchQuery = webSearchQuery,
+                        onLocalSearchChange = { localSearchQuery = it },
+                        onWebSearchChange = { webSearchQuery = it },
+                        showSortMenu = showSortMenu,
+                        onShowSortMenuChange = { showSortMenu = it },
+                        onOpenSettings = { showSettingsSheet = true },
+                        songSortOption = songSortOption,
+                        albumSortOption = albumSortOption,
+                        onSongSortChange = {
+                            songSortOption = it
+                            showSortMenu = false
+                        },
+                        onAlbumSortChange = {
+                            albumSortOption = it
+                            showSortMenu = false
+                        },
+                        collectionSortOption = collectionSortOption,
+                        onCollectionSortChange = {
+                            collectionSortOption = it
+                            showSortMenu = false
+                        }
+                    )
+                }
             }
         },
         bottomBar = {
-            Column {
+            // Likewise for the gesture bar, which otherwise overlaps the mini player.
+            Column(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
                 if (!showNowPlaying) {
                     MiniPlayerBar(
                         session = session,
