@@ -24,6 +24,7 @@ include(":app")
 
 // Shared, UI-free layers.
 include(":core:model")
+include(":core:database")
 include(":core:datastore")
 include(":core:data")
 include(":core:media")
