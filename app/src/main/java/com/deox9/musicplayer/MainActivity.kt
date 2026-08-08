@@ -1,9 +1,10 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 package com.deox9.musicplayer
 
 import android.Manifest
 import android.content.Context
-import android.content.pm.ApplicationInfo
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.database.ContentObserver
 import android.media.MediaMetadataRetriever
@@ -12,59 +13,83 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.widget.Toast
-import android.view.Choreographer
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import android.os.StrictMode
 import android.provider.MediaStore
-import java.io.ByteArrayInputStream
+import android.view.Choreographer
+import android.webkit.WebView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -73,30 +98,27 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.core.content.ContextCompat
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.width
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
-import com.deox9.musicplayer.library.LocalMusicRepository
-import com.deox9.musicplayer.library.LocalTrack
+import androidx.core.content.ContextCompat
+import coil3.compose.AsyncImage
 import com.deox9.musicplayer.library.Album
 import com.deox9.musicplayer.library.FavouritesRepository
-import com.deox9.musicplayer.library.PlaylistInfo
-import com.deox9.musicplayer.library.GenreInfo
 import com.deox9.musicplayer.library.FolderInfo
+import com.deox9.musicplayer.library.GenreInfo
+import com.deox9.musicplayer.library.LocalMusicRepository
+import com.deox9.musicplayer.library.LocalTrack
+import com.deox9.musicplayer.library.PlaylistInfo
 import com.deox9.musicplayer.library.RecommendationSignals
 import com.deox9.musicplayer.library.RecommendationSignalsRepository
 import com.deox9.musicplayer.lyrics.LyricsData
@@ -107,42 +129,17 @@ import com.deox9.musicplayer.player.storage.PlaybackSessionRepository
 import com.deox9.musicplayer.player.storage.QueueItem
 import com.deox9.musicplayer.settings.AppSettings
 import com.deox9.musicplayer.settings.AppSettingsRepository
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Settings
-import coil.compose.AsyncImage
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.graphics.Color
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.ui.platform.LocalConfiguration
+import com.deox9.musicplayer.web.WebPlayback
+import com.deox9.musicplayer.web.normalizeWebUrl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.net.URLEncoder
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableStrictModeInDebug()
         super.onCreate(savedInstanceState)
         setContent {
             val settingsRepository = remember { AppSettingsRepository(this@MainActivity) }
@@ -155,6 +152,34 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+}
+
+/**
+ * Turns on StrictMode for debug builds.
+ *
+ * Disk and network work on the main thread is the usual cause of scroll jank in a
+ * music app — this library still queries MediaStore synchronously in several
+ * places. Logged rather than fatal so existing violations surface without making
+ * the app unusable while they are worked through.
+ */
+private fun MainActivity.enableStrictModeInDebug() {
+    if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
+
+    StrictMode.setThreadPolicy(
+        StrictMode.ThreadPolicy.Builder()
+            .detectDiskReads()
+            .detectDiskWrites()
+            .detectNetwork()
+            .penaltyLog()
+            .build()
+    )
+    StrictMode.setVmPolicy(
+        StrictMode.VmPolicy.Builder()
+            .detectLeakedSqlLiteObjects()
+            .detectLeakedClosableObjects()
+            .penaltyLog()
+            .build()
+    )
 }
 
 private enum class RootMode { LocalDevice, WebPlayback }
@@ -170,6 +195,34 @@ private enum class LocalCategoryTab {
     Genres,
     Suggested,
     Favourites
+}
+
+/**
+ * Asks for POST_NOTIFICATIONS once on API 33+.
+ *
+ * Without the grant, the media notification never appears, which also costs the
+ * lock-screen and Bluetooth transport controls the media session would otherwise
+ * provide. The permission was declared in the manifest but never requested.
+ */
+@Composable
+private fun RequestNotificationPermission() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* Playback still works without it; only the notification is lost. */ }
+
+    LaunchedEffect(Unit) {
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (!granted) {
+            launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 }
 
 @Composable
@@ -209,6 +262,8 @@ private fun AppRoot() {
     }
 
     val session by playbackSessionRepository.observe().collectAsState(initial = null)
+
+    RequestNotificationPermission()
 
     LaunchedEffect(localSearchQuery) {
         delay(180)
@@ -317,7 +372,7 @@ private fun AppRoot() {
                 currentSession.uri != lastPausedWebForLocalUri
 
         if (localTrackStarted) {
-            pauseWebPlayback(webPlaybackView)
+            WebPlayback.pause(webPlaybackView)
             lastPausedWebForLocalUri = currentSession.uri
         }
     }
@@ -375,12 +430,14 @@ private fun AppRoot() {
                             label = { Text("Local/Device") },
                             icon = {}
                         )
-                        NavigationBarItem(
-                            selected = mode == RootMode.WebPlayback,
-                            onClick = { mode = RootMode.WebPlayback },
-                            label = { Text("Web") },
-                            icon = {}
-                        )
+                        if (WebPlayback.IS_AVAILABLE) {
+                            NavigationBarItem(
+                                selected = mode == RootMode.WebPlayback,
+                                onClick = { mode = RootMode.WebPlayback },
+                                label = { Text("Web") },
+                                icon = {}
+                            )
+                        }
                     }
                 }
             }
@@ -417,11 +474,13 @@ private fun AppRoot() {
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
-                WebPlaybackScreen(
-                    searchQuery = webSearchQuery,
-                    isVisible = mode == RootMode.WebPlayback,
-                    onWebViewReady = { webPlaybackView = it }
-                )
+                if (WebPlayback.IS_AVAILABLE) {
+                    WebPlayback.Screen(
+                        searchQuery = webSearchQuery,
+                        isVisible = mode == RootMode.WebPlayback,
+                        onWebViewReady = { webPlaybackView = it }
+                    )
+                }
 
                 if (mode == RootMode.LocalDevice) {
                     Column(modifier = Modifier.fillMaxSize()) {
@@ -1719,7 +1778,7 @@ private fun ExpandedNowPlayingScreen(
     var showAudioSettings by remember { mutableStateOf(false) }
     var showEqPanel by remember { mutableStateOf(false) }
     var dragOffsetY by remember { mutableStateOf(0f) }
-    
+
     val lyricCredits by produceState<String?>(initialValue = null, key1 = currentTrackUri) {
         value = if (currentTrackUri.isBlank()) {
             null
@@ -2463,7 +2522,7 @@ private fun ExpandedNowPlayingScreen(
                         TextButton(
                             onClick = {
                                 val query = "${session.title} ${session.artist} lyrics"
-                                val url = "https://www.google.com/search?q=${URLEncoder.encode(query, "UTF-8")}" 
+                                val url = "https://www.google.com/search?q=${URLEncoder.encode(query, "UTF-8")}"
                                 runCatching {
                                     context.startActivity(
                                         Intent(Intent.ACTION_VIEW, Uri.parse(url))
@@ -3457,358 +3516,12 @@ private fun AlbumDetailScreen(album: Album, onBack: () -> Unit) {
     }
 }
 
-@Composable
-private fun WebPlaybackScreen(
-    searchQuery: String = "",
-    isVisible: Boolean,
-    onWebViewReady: (WebView) -> Unit
-) {
-    val context = LocalContext.current
-    val settingsRepository = remember { AppSettingsRepository(context) }
-    val appSettings by settingsRepository.observe().collectAsState(initial = AppSettings())
-    var blockedRequestCount by rememberSaveable { mutableStateOf(0) }
-    var lastBlockedHost by rememberSaveable { mutableStateOf<String?>(null) }
-    var lastLoadError by rememberSaveable { mutableStateOf<String?>(null) }
-    var fallbackTriggered by rememberSaveable { mutableStateOf(false) }
-    var webViewSavedState by rememberSaveable { mutableStateOf<Bundle?>(null) }
-    var restoredFromSavedState by rememberSaveable { mutableStateOf(false) }
-    var currentWebUrl by rememberSaveable { mutableStateOf("") }
-
-    val fallbackHomeUrl = remember(appSettings.webHomeUrl) {
-        normalizeWebUrl(appSettings.webHomeUrl) ?: AppSettingsRepository.DEFAULT_WEB_HOME
-    }
-
-    val webView = remember {
-        WebView(context).apply {
-            onWebViewReady(this)
-            isFocusable = true
-            isFocusableInTouchMode = true
-            requestFocus()
-            setOnTouchListener { view, _ ->
-                view.requestFocus()
-                false
-            }
-            webViewClient = HardenedWebViewClient(
-                onBlocked = { blockedUrl ->
-                    blockedRequestCount += 1
-                    lastBlockedHost = Uri.parse(blockedUrl).host ?: blockedUrl
-                },
-                onMainFrameError = { code, description ->
-                    lastLoadError = "Web load failed ($code): $description"
-                    if (!fallbackTriggered) {
-                        fallbackTriggered = true
-                        loadUrl(fallbackHomeUrl)
-                    }
-                },
-                onPageSuccess = { pageUrl ->
-                    lastLoadError = null
-                    if (!pageUrl.isNullOrBlank()) {
-                        currentWebUrl = pageUrl
-                    }
-                    injectYouTubeAdSkipper(webView = this)
-                }
-            )
-            webChromeClient = WebChromeClient()
-            settings.javaScriptEnabled = true
-            settings.cacheMode = WebSettings.LOAD_DEFAULT
-            settings.mediaPlaybackRequiresUserGesture = true
-            settings.domStorageEnabled = true
-            settings.allowFileAccess = false
-            settings.allowContentAccess = false
-
-            val restored = webViewSavedState?.let { state ->
-                restoreState(state)
-            }
-            if (restored == null) {
-                val bootUrl = when {
-                    currentWebUrl.isNotBlank() -> currentWebUrl
-                    else -> AppSettingsRepository.DEFAULT_WEB_HOME
-                }
-                loadUrl(bootUrl)
-            } else {
-                restoredFromSavedState = true
-            }
-        }
-    }
-
-    LaunchedEffect(appSettings.webHomeUrl) {
-        val homeUrl = normalizeWebUrl(appSettings.webHomeUrl) ?: AppSettingsRepository.DEFAULT_WEB_HOME
-        val currentUrl = webView.url.orEmpty()
-        if (
-            searchQuery.trim().length < 2 &&
-            !restoredFromSavedState &&
-            (currentUrl.isBlank() || currentUrl == "about:blank")
-        ) {
-            fallbackTriggered = false
-            webView.loadUrl(homeUrl)
-        }
-    }
-
-    LaunchedEffect(searchQuery) {
-        val query = searchQuery.trim()
-        if (query.length >= 2) {
-            delay(350)
-            val encoded = URLEncoder.encode(query, Charsets.UTF_8.name())
-            val target = "https://m.youtube.com/results?search_query=$encoded"
-            val current = webView.url.orEmpty()
-            if (current.contains("m.youtube.com/results") && current.contains("search_query=$encoded")) {
-                return@LaunchedEffect
-            }
-            fallbackTriggered = false
-            webView.loadUrl(target)
-        }
-    }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            val state = Bundle()
-            webView.saveState(state)
-            webViewSavedState = state
-            webView.stopLoading()
-            webView.destroy()
-        }
-    }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        AndroidView(
-            modifier = if (isVisible) Modifier.fillMaxSize() else Modifier.size(1.dp),
-            factory = { webView }
-        )
-
-        if (isVisible) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(10.dp)
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f), RoundedCornerShape(10.dp))
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = "Ad-filter blocks: $blockedRequestCount",
-                    style = MaterialTheme.typography.labelMedium
-                )
-                if (!lastBlockedHost.isNullOrBlank()) {
-                    Text(
-                        text = "Last blocked: $lastBlockedHost",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                if (!lastLoadError.isNullOrBlank()) {
-                    Text(
-                        text = lastLoadError.orEmpty(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    TextButton(
-                        onClick = {
-                            fallbackTriggered = false
-                            webView.reload()
-                        }
-                    ) {
-                        Text("Retry")
-                    }
-                }
-            }
-        }
-    }
-}
-
 private fun sendPlaybackIntent(context: Context, intent: Intent) {
-    context.startService(intent)
-}
-
-private class HardenedWebViewClient(
-    private val onBlocked: (String) -> Unit,
-    private val onMainFrameError: (Int, String) -> Unit,
-    private val onPageSuccess: (String?) -> Unit
-) : WebViewClient() {
-    override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
-        val url = request?.url ?: return super.shouldInterceptRequest(view, request)
-        return if (shouldBlockWebResource(url.toString())) {
-            onBlocked(url.toString())
-            emptyBlockedResponse()
-        } else {
-            super.shouldInterceptRequest(view, request)
+    // startService throws IllegalStateException if the process is in the background
+    // on API 26+. This whole intent layer is interim: it is replaced by a bound
+    // MediaController, which is the supported way to drive a MediaSessionService.
+    runCatching { context.startService(intent) }
+        .onFailure { error ->
+            android.util.Log.w("Deo", "Playback intent ${intent.action} dropped", error)
         }
-    }
-
-    override fun onReceivedError(
-        view: WebView?,
-        request: WebResourceRequest?,
-        error: android.webkit.WebResourceError?
-    ) {
-        super.onReceivedError(view, request, error)
-        if (request?.isForMainFrame == true) {
-            onMainFrameError(error?.errorCode ?: -1, error?.description?.toString().orEmpty())
-        }
-    }
-
-    override fun onPageFinished(view: WebView?, url: String?) {
-        super.onPageFinished(view, url)
-        onPageSuccess(url)
-    }
-}
-
-private fun injectYouTubeAdSkipper(webView: WebView) {
-        val script = """
-                (function() {
-                    if (window.__deoAdSkipInstalled) return;
-                    window.__deoAdSkipInstalled = true;
-
-                    function clickIfVisible(el) {
-                        if (!el) return false;
-                        const style = window.getComputedStyle(el);
-                        if (style && style.display !== 'none' && style.visibility !== 'hidden') {
-                            try { el.click(); return true; } catch (e) { return false; }
-                        }
-                        return false;
-                    }
-
-                    function skipAds() {
-                        // Desktop YouTube controls
-                        clickIfVisible(document.querySelector('.ytp-ad-skip-button'));
-                        clickIfVisible(document.querySelector('.ytp-ad-skip-button-modern'));
-                        clickIfVisible(document.querySelector('.ytp-ad-overlay-close-button'));
-
-                        // Mobile YouTube controls
-                        clickIfVisible(document.querySelector('.ytmAdSkipButton'));
-                        clickIfVisible(document.querySelector('button[aria-label*="Skip" i]'));
-                        clickIfVisible(document.querySelector('button[aria-label*="Close" i]'));
-
-                        const video = document.querySelector('video');
-                        if (video) {
-                            try { video.muted = false; } catch (e) {}
-                        }
-                    }
-                    window.__deoAdSkipTimer = setInterval(skipAds, 400);
-                    document.addEventListener('visibilitychange', skipAds, { passive: true });
-                    skipAds();
-                })();
-        """.trimIndent()
-
-        webView.evaluateJavascript(script, null)
-}
-
-private fun pauseWebPlayback(webView: WebView?) {
-    if (webView == null) return
-    val script = """
-        (function() {
-            const mediaNodes = document.querySelectorAll('video, audio');
-            mediaNodes.forEach(function(node) {
-                try {
-                    node.pause();
-                    node.muted = true;
-                } catch (e) {}
-            });
-        })();
-    """.trimIndent()
-    webView.evaluateJavascript(script, null)
-}
-
-private fun shouldBlockWebResource(rawUrl: String): Boolean {
-    val lower = rawUrl.lowercase()
-    val uri = try { android.net.Uri.parse(rawUrl) } catch (_: Exception) { null }
-    val host = uri?.host?.lowercase() ?: return false
-
-    // ========== PRIMARY AD & TRACKER NETWORKS ==========
-    val adNetworks = listOf(
-        // Google Ad Infrastructure
-        "doubleclick.net", "pagead2.googlesyndication.com", "adservice.google",
-        "googlesyndication.com", "googletagservices.com", "googletagmanager.com",
-        
-        // YouTube Ad Delivery
-        "ads.youtube.com", "yt.be", "adx.g.doubleclick.net",
-        
-        // Third-party ad networks
-        "ad.doubleclick.net", "ads4.google.com", "mads.google.com",
-        "csi.gstatic.com", // Google client error/CSI tracking
-        
-        // Analytics & Telemetry
-        "google-analytics.com", "analytics.google.com", "www.googletagmanager.com",
-        "stats.g.doubleclick.net", "analytics.google.com",
-        
-        // Additional Tracking Services
-        "tpc.googlesyndication.com", "www.gstatic.com/generate_204",
-        "bat.bing.com", "c.bing.com",
-        
-        // YouTube specific tracking
-        "yt-video-upload"
-    )
-
-    if (adNetworks.any { host.contains(it) }) return true
-
-    // ========== PATH PATTERNS (YouTube-focused routes) ==========
-    val blockedPaths = listOf(
-        // YouTube ad delivery endpoints
-        "/api/stats/ads", "/get_ads", "/api/ads", "/js/ads/",
-        "/pagead/", "/gvt1/ads", "/ads?", "/ad_break", "ad_break=",
-        
-        // YouTube logging & telemetry
-        "/log_event", "/api/stats", "/youtubei/v1/log_event",
-        "/youtubei/v1/log", "/api/v1/log", "/reporting/", "tracking=",
-        
-        // Ad format & unit detection
-        "adformat=", "adunit=", "instream_ad", "yt_ad", "ad_request",
-        
-        // Engagement metrics for ads
-        "/api/v1/survey", "/ptracking", "pcs/active", "ping?",
-        
-        // Beacon tracking
-        "beacon.scorecardresearch.com", "sb.scorecardresearch.com",
-        
-        // Redirect & measurement
-        "/r/", "/t/", "doubleclick_tracking"
-    )
-
-    if (blockedPaths.any { lower.contains(it) }) return true
-
-    // ========== QUERY PARAMETER PATTERNS ==========
-    val query = uri?.query?.lowercase() ?: ""
-    val adQueryParams = listOf(
-        "ad_", "ads_", "adunit", "adformat", "ad_type", "ad_client",
-        "google_afc", "google_ad", "google_gd", "tracking", "utm_",
-        "fbclid", "gclid", "msclkid", "igshid"
-    )
-
-    if (adQueryParams.any { query.contains(it) }) return true
-
-    // ========== FILE TYPE BLOCKING (video ads, banners) ==========
-    val blockedExtensions = listOf(
-        // Video ads formats
-        "vmap.xml", // VAST/VMAP (video ad XML)
-        ".vpaid", ".vast", "ads.js"
-    )
-
-    if (blockedExtensions.any { lower.endsWith(it) }) return true
-
-    return false
-}
-
-private fun emptyBlockedResponse(): WebResourceResponse {
-    return WebResourceResponse(
-        "text/plain",
-        "utf-8",
-        204,
-        "No Content",
-        mapOf("Cache-Control" to "no-store"),
-        ByteArrayInputStream(ByteArray(0))
-    )
-}
-
-private fun normalizeWebUrl(raw: String): String? {
-    val trimmed = raw.trim()
-    if (trimmed.isBlank()) return null
-    val withScheme = if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-        trimmed
-    } else {
-        "https://$trimmed"
-    }
-    return try {
-        android.net.Uri.parse(withScheme)
-        withScheme
-    } catch (_: Exception) {
-        null
-    }
 }
