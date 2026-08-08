@@ -18,6 +18,8 @@ dependencies {
     // The library screens own the audio-permission request UI.
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.hilt.navigation.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.coil.compose)
     implementation(libs.kotlinx.coroutines.android)
 }

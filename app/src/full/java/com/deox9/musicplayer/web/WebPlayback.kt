@@ -34,7 +34,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.deox9.musicplayer.settings.AppSettings
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.deox9.musicplayer.feature.settings.SettingsViewModel
 import com.deox9.musicplayer.settings.AppSettingsRepository
 import kotlinx.coroutines.delay
 import java.io.ByteArrayInputStream
@@ -73,8 +74,8 @@ private fun WebPlaybackScreen(
     onWebViewReady: (WebView) -> Unit
 ) {
     val context = LocalContext.current
-    val settingsRepository = remember { AppSettingsRepository(context) }
-    val appSettings by settingsRepository.observe().collectAsState(initial = AppSettings())
+    val settingsViewModel: SettingsViewModel = hiltViewModel()
+    val appSettings by settingsViewModel.settings.collectAsState()
     var blockedRequestCount by rememberSaveable { mutableStateOf(0) }
     var lastBlockedHost by rememberSaveable { mutableStateOf<String?>(null) }
     var lastLoadError by rememberSaveable { mutableStateOf<String?>(null) }

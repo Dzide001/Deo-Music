@@ -78,17 +78,12 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
-import com.deox9.musicplayer.library.FavouritesRepository
-import com.deox9.musicplayer.library.LocalMusicRepository
 import com.deox9.musicplayer.library.PlaylistInfo
 import com.deox9.musicplayer.lyrics.LyricsData
-import com.deox9.musicplayer.lyrics.LyricsRepository
-import com.deox9.musicplayer.player.LocalPlaybackConnection
 import com.deox9.musicplayer.player.PlaybackState
 import com.deox9.musicplayer.player.QueueEntry
-import com.deox9.musicplayer.settings.AppSettings
-import com.deox9.musicplayer.settings.AppSettingsRepository
 import com.deox9.musicplayer.ui.formatDuration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -97,12 +92,13 @@ import java.net.URLEncoder
 
 @Composable
 fun MiniPlayerBar(
+    viewModel: PlayerViewModel = hiltViewModel(),
     session: PlaybackState?,
     onExpand: () -> Unit,
     onOpenQueue: () -> Unit
 ) {
     val context = LocalContext.current
-    val playback = LocalPlaybackConnection.current
+    val playback = viewModel.playback
     val title = session?.title ?: "Nothing playing"
     val artist = session?.artist ?: "Select a track from Library"
     val isPlaying = session?.isPlaying ?: false
@@ -177,6 +173,7 @@ fun MiniPlayerBar(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ExpandedNowPlayingScreen(
+    viewModel: PlayerViewModel = hiltViewModel(),
     session: PlaybackState?,
     onMinimize: () -> Unit,
     onOpenQueue: () -> Unit,
@@ -184,14 +181,10 @@ fun ExpandedNowPlayingScreen(
     onViewAlbum: (String) -> Unit
 ) {
     val context = LocalContext.current
-    val playback = LocalPlaybackConnection.current
-    val favRepo = remember { FavouritesRepository(context) }
-    val localRepo = remember { LocalMusicRepository(context) }
-    val lyricsRepository = remember { LyricsRepository(context) }
-    val settingsRepository = remember { AppSettingsRepository(context) }
-    val appSettings by settingsRepository.observe().collectAsState(initial = AppSettings())
+    val playback = viewModel.playback
+    val appSettings by viewModel.settings.collectAsState()
     val currentTrackUri = session?.uri ?: ""
-    val isFavourite by favRepo.observe().collectAsState(initial = emptySet())
+    val isFavourite by viewModel.favourites.collectAsState()
     val currentIsFavourite = currentTrackUri in isFavourite
     val scope = rememberCoroutineScope()
     var showLyricsPanel by remember { mutableStateOf(false) }
@@ -241,7 +234,7 @@ fun ExpandedNowPlayingScreen(
         }
         lyricsLoading = true
         fetchedLyrics = withContext(Dispatchers.IO) {
-            lyricsRepository.getLyrics(
+            viewModel.lyricsFor(
                 trackKey = currentTrackUri,
                 title = session?.title.orEmpty(),
                 artist = session?.artist.orEmpty(),
@@ -315,7 +308,7 @@ fun ExpandedNowPlayingScreen(
                             if (session?.uri.isNullOrBlank()) return@DropdownMenuItem
                             scope.launch {
                                 availablePlaylists = withContext(Dispatchers.IO) {
-                                    localRepo.getPlaylists()
+                                    viewModel.playlists()
                                 }
                                 showAddToPlaylistDialog = true
                             }
@@ -644,7 +637,7 @@ fun ExpandedNowPlayingScreen(
                 enabled = currentTrackUri.isNotBlank(),
                 onClick = {
                     scope.launch {
-                        favRepo.toggle(currentTrackUri)
+                        viewModel.toggleFavourite(currentTrackUri)
                     }
                 }
             ) {
@@ -707,7 +700,7 @@ fun ExpandedNowPlayingScreen(
                                         if (trackUri.isBlank()) return@OutlinedButton
                                         scope.launch {
                                             val added = withContext(Dispatchers.IO) {
-                                                localRepo.addTrackToPlaylist(playlist.id, trackUri)
+                                                viewModel.addTrackToPlaylist(playlist.id, trackUri)
                                             }
                                             Toast
                                                 .makeText(
@@ -767,11 +760,11 @@ fun ExpandedNowPlayingScreen(
                             if (trackUri.isBlank()) return@TextButton
                             scope.launch {
                                 val playlistId = withContext(Dispatchers.IO) {
-                                    localRepo.createPlaylist(newPlaylistName.trim())
+                                    viewModel.createPlaylist(newPlaylistName.trim())
                                 }
                                 val added = if (playlistId != null) {
                                     withContext(Dispatchers.IO) {
-                                        localRepo.addTrackToPlaylist(playlistId, trackUri)
+                                        viewModel.addTrackToPlaylist(playlistId, trackUri)
                                     }
                                 } else {
                                     false
@@ -811,7 +804,7 @@ fun ExpandedNowPlayingScreen(
                             if (trackUri.isBlank()) return@TextButton
                             scope.launch {
                                 val deleted = withContext(Dispatchers.IO) {
-                                    localRepo.deleteTrack(trackUri)
+                                    viewModel.deleteTrack(trackUri)
                                 }
                                 Toast
                                     .makeText(
@@ -954,7 +947,7 @@ fun ExpandedNowPlayingScreen(
                                 checked = appSettings.crossfadeEnabled,
                                 onCheckedChange = { enabled ->
                                     scope.launch {
-                                        settingsRepository.setCrossfadeEnabled(enabled)
+                                        viewModel.setCrossfadeEnabled(enabled)
                                     }
                                 }
                             )
@@ -969,7 +962,7 @@ fun ExpandedNowPlayingScreen(
                                 checked = appSettings.gaplessEnabled,
                                 onCheckedChange = { enabled ->
                                     scope.launch {
-                                        settingsRepository.setGaplessEnabled(enabled)
+                                        viewModel.setGaplessEnabled(enabled)
                                     }
                                 }
                             )
@@ -985,7 +978,7 @@ fun ExpandedNowPlayingScreen(
                                 checked = appSettings.replayGainEnabled,
                                 onCheckedChange = { enabled ->
                                     scope.launch {
-                                        settingsRepository.setReplayGainEnabled(enabled)
+                                        viewModel.setReplayGainEnabled(enabled)
                                     }
                                 }
                             )
@@ -1000,7 +993,7 @@ fun ExpandedNowPlayingScreen(
                                 value = appSettings.replayGainDb,
                                 onValueChange = { value ->
                                     scope.launch {
-                                        settingsRepository.setReplayGainDb(value)
+                                        viewModel.setReplayGainDb(value)
                                     }
                                 },
                                 valueRange = -18f..0f
@@ -1017,7 +1010,7 @@ fun ExpandedNowPlayingScreen(
                                 checked = appSettings.eqEnabled,
                                 onCheckedChange = { enabled ->
                                     scope.launch {
-                                        settingsRepository.setEqEnabled(enabled)
+                                        viewModel.setEqEnabled(enabled)
                                     }
                                 }
                             )
@@ -1051,16 +1044,16 @@ fun ExpandedNowPlayingScreen(
                             TextButton(
                                 onClick = {
                                     scope.launch {
-                                        settingsRepository.setEqEnabled(true)
-                                        settingsRepository.setEqBandLevels(List(10) { 0 })
+                                        viewModel.setEqEnabled(true)
+                                        viewModel.setEqBandLevels(List(10) { 0 })
                                     }
                                 }
                             ) { Text("Flat") }
                             TextButton(
                                 onClick = {
                                     scope.launch {
-                                        settingsRepository.setEqEnabled(true)
-                                        settingsRepository.setEqBandLevels(
+                                        viewModel.setEqEnabled(true)
+                                        viewModel.setEqBandLevels(
                                             listOf(350, 300, 220, 120, 40, -40, -100, -180, -220, -260)
                                         )
                                     }
@@ -1069,8 +1062,8 @@ fun ExpandedNowPlayingScreen(
                             TextButton(
                                 onClick = {
                                     scope.launch {
-                                        settingsRepository.setEqEnabled(true)
-                                        settingsRepository.setEqBandLevels(
+                                        viewModel.setEqEnabled(true)
+                                        viewModel.setEqBandLevels(
                                             listOf(-200, -120, -40, 140, 260, 260, 140, -20, -120, -200)
                                         )
                                     }
@@ -1079,8 +1072,8 @@ fun ExpandedNowPlayingScreen(
                             TextButton(
                                 onClick = {
                                     scope.launch {
-                                        settingsRepository.setEqEnabled(true)
-                                        settingsRepository.setEqBandLevels(
+                                        viewModel.setEqEnabled(true)
+                                        viewModel.setEqBandLevels(
                                             listOf(-260, -220, -160, -80, 40, 140, 240, 320, 380, 430)
                                         )
                                     }
@@ -1101,8 +1094,8 @@ fun ExpandedNowPlayingScreen(
                                         this[index] = newValue.toInt().coerceIn(-1500, 1500)
                                     }
                                     scope.launch {
-                                        settingsRepository.setEqEnabled(true)
-                                        settingsRepository.setEqBandLevels(updated)
+                                        viewModel.setEqEnabled(true)
+                                        viewModel.setEqBandLevels(updated)
                                     }
                                 },
                                 valueRange = -1500f..1500f
@@ -1177,12 +1170,13 @@ private fun currentSyncedLyricLine(lines: List<com.deox9.musicplayer.lyrics.Sync
 
 @Composable
 fun QueueSidebar(
+    viewModel: PlayerViewModel = hiltViewModel(),
     queue: List<QueueEntry>,
     currentIndex: Int,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val playback = LocalPlaybackConnection.current
+    val playback = viewModel.playback
     var reorderableQueue by remember { mutableStateOf(queue) }
     val rowHeightPx = with(LocalDensity.current) { 72.dp.toPx() }
     var draggedIndex by remember { mutableStateOf<Int?>(null) }

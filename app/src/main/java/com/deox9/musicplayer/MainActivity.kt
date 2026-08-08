@@ -68,6 +68,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.deox9.musicplayer.feature.library.AlbumsScreen
 import com.deox9.musicplayer.feature.library.FavouritesScreen
 import com.deox9.musicplayer.feature.library.FoldersScreen
@@ -77,14 +78,11 @@ import com.deox9.musicplayer.feature.library.PlaylistsScreen
 import com.deox9.musicplayer.feature.library.SuggestedScreen
 import com.deox9.musicplayer.feature.player.ExpandedNowPlayingScreen
 import com.deox9.musicplayer.feature.player.MiniPlayerBar
+import com.deox9.musicplayer.feature.player.PlayerViewModel
 import com.deox9.musicplayer.feature.player.QueueSidebar
 import com.deox9.musicplayer.feature.settings.SettingsSheet
+import com.deox9.musicplayer.feature.settings.SettingsViewModel
 import com.deox9.musicplayer.library.LocalMusicRepository
-import com.deox9.musicplayer.player.LocalPlaybackConnection
-import com.deox9.musicplayer.player.ProvidePlaybackConnection
-import com.deox9.musicplayer.player.rememberPlaybackConnection
-import com.deox9.musicplayer.settings.AppSettings
-import com.deox9.musicplayer.settings.AppSettingsRepository
 import com.deox9.musicplayer.ui.AlbumSortOption
 import com.deox9.musicplayer.ui.CollectionSortOption
 import com.deox9.musicplayer.ui.SongSortOption
@@ -101,15 +99,13 @@ class MainActivity : ComponentActivity() {
         enableStrictModeInDebug()
         super.onCreate(savedInstanceState)
         setContent {
-            val settingsRepository = remember { AppSettingsRepository(this@MainActivity) }
-            val appSettings by settingsRepository.observe().collectAsState(initial = AppSettings())
+            val settingsViewModel: SettingsViewModel = hiltViewModel()
+            val appSettings by settingsViewModel.settings.collectAsState()
 
             MaterialTheme(
                 colorScheme = if (appSettings.darkThemeEnabled) darkColorScheme() else lightColorScheme()
             ) {
-                ProvidePlaybackConnection(rememberPlaybackConnection()) {
-                    AppRoot()
-                }
+                AppRoot()
             }
         }
     }
@@ -184,7 +180,7 @@ private fun RequestNotificationPermission() {
 }
 
 @Composable
-private fun AppRoot() {
+private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
     val context = LocalContext.current
     var mode by rememberSaveable { mutableStateOf(RootMode.LocalDevice) }
     var localTab by rememberSaveable { mutableStateOf(LocalCategoryTab.Songs) }
@@ -214,7 +210,7 @@ private fun AppRoot() {
     val suggestedListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     val favouritesListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
 
-    val playback = LocalPlaybackConnection.current
+    val playback = viewModel.playback
     val playbackState by playback.state.collectAsState()
     // Null means "nothing loaded", which is what the rest of the UI already
     // branches on. Everything else reads straight off the bound controller.

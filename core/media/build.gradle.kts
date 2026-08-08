@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 plugins {
     id("deo.android.library.compose")
+    id("deo.android.hilt")
 }
 
 android {

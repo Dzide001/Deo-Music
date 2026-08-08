@@ -5,12 +5,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
 import androidx.annotation.OptIn
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.platform.LocalContext
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -19,6 +13,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -30,6 +25,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * Binds a [MediaController] to [PlaybackService] and exposes player state as a Flow.
@@ -44,7 +41,10 @@ import kotlinx.coroutines.launch
  * forwarded to the session automatically, so no custom command plumbing is needed.
  */
 @OptIn(markerClass = [UnstableApi::class])
-class PlaybackConnection(private val context: Context) {
+@Singleton
+class PlaybackConnection @Inject constructor(
+    @ApplicationContext private val context: Context,
+) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -54,6 +54,12 @@ class PlaybackConnection(private val context: Context) {
     private var controller: MediaController? = null
     private var controllerFuture: com.google.common.util.concurrent.ListenableFuture<MediaController>? = null
     private var positionTicker: Job? = null
+
+    init {
+        // App-scoped: the controller outlives any single screen, so binding is
+        // tied to the graph rather than to a composition that comes and goes.
+        connect()
+    }
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
@@ -268,40 +274,4 @@ class PlaybackConnection(private val context: Context) {
     private companion object {
         const val POSITION_TICK_MS = 250L
     }
-}
-
-/**
- * Binds a [PlaybackConnection] for the lifetime of the composition.
- */
-@Composable
-fun rememberPlaybackConnection(): PlaybackConnection {
-    val context = LocalContext.current
-    val connection = remember(context) { PlaybackConnection(context.applicationContext) }
-
-    DisposableEffect(connection) {
-        connection.connect()
-        onDispose { connection.release() }
-    }
-
-    return connection
-}
-
-/**
- * The connection for the current screen.
- *
- * Interim scaffolding: the UI is one large composable tree in a single file, and
- * threading the connection through every layer would be pure noise. When the UI is
- * split into feature modules each screen gets a ViewModel holding its own
- * dependencies, and this goes away.
- */
-val LocalPlaybackConnection = staticCompositionLocalOf<PlaybackConnection> {
-    error("No PlaybackConnection provided. Wrap the tree in ProvidePlaybackConnection.")
-}
-
-@Composable
-fun ProvidePlaybackConnection(
-    connection: PlaybackConnection,
-    content: @Composable () -> Unit,
-) {
-    CompositionLocalProvider(LocalPlaybackConnection provides connection, content = content)
 }

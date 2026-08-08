@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 plugins {
     id("deo.android.library.compose")
+    id("deo.android.hilt")
 }
 
 android {
@@ -14,6 +15,8 @@ dependencies {
     implementation(projects.core.datastore)
     implementation(projects.core.media)
 
+    implementation(libs.hilt.navigation.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.coil.compose)
     implementation(libs.kotlinx.coroutines.android)
 }

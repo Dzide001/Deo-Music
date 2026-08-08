@@ -57,19 +57,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import com.deox9.musicplayer.library.Album
-import com.deox9.musicplayer.library.FavouritesRepository
 import com.deox9.musicplayer.library.FolderInfo
 import com.deox9.musicplayer.library.GenreInfo
 import com.deox9.musicplayer.library.LocalMusicRepository
 import com.deox9.musicplayer.library.LocalTrack
 import com.deox9.musicplayer.library.PlaylistInfo
-import com.deox9.musicplayer.library.RecommendationSignals
-import com.deox9.musicplayer.library.RecommendationSignalsRepository
-import com.deox9.musicplayer.player.LocalPlaybackConnection
-import com.deox9.musicplayer.settings.AppSettings
-import com.deox9.musicplayer.settings.AppSettingsRepository
 import com.deox9.musicplayer.ui.AlbumSortOption
 import com.deox9.musicplayer.ui.CollectionSortOption
 import com.deox9.musicplayer.ui.SongSortOption
@@ -296,21 +291,17 @@ fun GenresScreen(
 
 @Composable
 fun SuggestedScreen(
+    viewModel: LibraryViewModel = hiltViewModel(),
     listState: LazyListState
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val settingsRepository = remember { AppSettingsRepository(context) }
-    val appSettings by settingsRepository.observe().collectAsState(initial = AppSettings())
-    val playback = LocalPlaybackConnection.current
+    val appSettings by viewModel.settings.collectAsState()
+    val playback = viewModel.playback
     val playbackState by playback.state.collectAsState()
     val session = playbackState.takeIf { it.hasTrack }
-    val favRepo = remember { FavouritesRepository(context) }
-    val favourites by favRepo.observe().collectAsState(initial = emptySet())
-    val recommendationSignalsRepository = remember { RecommendationSignalsRepository(context) }
-    val recommendationSignals by recommendationSignalsRepository.observe().collectAsState(
-        initial = RecommendationSignals()
-    )
+    val favourites by viewModel.favourites.collectAsState()
+    val recommendationSignals by viewModel.recommendationSignals.collectAsState()
     var refreshNonce by remember { mutableStateOf(0) }
 
     if (!appSettings.suggestionsEnabled) {
@@ -471,7 +462,7 @@ fun SuggestedScreen(
                         track = rec.track,
                         isFavourite = rec.track.contentUri in favourites,
                         onToggleFavourite = {
-                            scope.launch { favRepo.toggle(rec.track.contentUri) }
+                            viewModel.toggleFavourite(rec.track.contentUri)
                         },
                         onClick = {
                             playback.playNow(rec.track.contentUri, rec.track.title, rec.track.artist)
@@ -495,7 +486,7 @@ fun SuggestedScreen(
                         TextButton(
                             onClick = {
                                 scope.launch {
-                                    recommendationSignalsRepository.setLiked(rec.track.contentUri, liked = true)
+                                    viewModel.setRecommendationLiked(rec.track.contentUri, liked = true)
                                 }
                             }
                         ) {
@@ -504,7 +495,7 @@ fun SuggestedScreen(
                         TextButton(
                             onClick = {
                                 scope.launch {
-                                    recommendationSignalsRepository.setHidden(rec.track.contentUri, hidden = true)
+                                    viewModel.setRecommendationHidden(rec.track.contentUri, hidden = true)
                                 }
                             }
                         ) {
@@ -520,14 +511,14 @@ fun SuggestedScreen(
 
 @Composable
 fun FavouritesScreen(
+    viewModel: LibraryViewModel = hiltViewModel(),
     searchQuery: String = "",
     sortOption: SongSortOption = SongSortOption.Title,
     listState: LazyListState
 ) {
     val context = LocalContext.current
-    val playback = LocalPlaybackConnection.current
-    val favRepo = remember { FavouritesRepository(context) }
-    val favourites by favRepo.observe().collectAsState(initial = emptySet())
+    val playback = viewModel.playback
+    val favourites by viewModel.favourites.collectAsState()
     val scope = rememberCoroutineScope()
 
     val tracks by produceState<List<LocalTrack>>(initialValue = emptyList()) {
@@ -579,7 +570,7 @@ fun FavouritesScreen(
                 track = track,
                 isFavourite = track.contentUri in favourites,
                 onToggleFavourite = {
-                    scope.launch { favRepo.toggle(track.contentUri) }
+                    viewModel.toggleFavourite(track.contentUri)
                 },
                 onClick = {
                     playback.playNow(track.contentUri, track.title, track.artist)
@@ -659,14 +650,14 @@ private fun FolderDetailScreen(
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun CollectionTrackListScreen(
+    viewModel: LibraryViewModel = hiltViewModel(),
     title: String,
     tracks: List<LocalTrack>,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val playback = LocalPlaybackConnection.current
-    val favRepo = remember { FavouritesRepository(context) }
-    val favourites by favRepo.observe().collectAsState(initial = emptySet())
+    val playback = viewModel.playback
+    val favourites by viewModel.favourites.collectAsState()
     val scope = rememberCoroutineScope()
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -695,7 +686,7 @@ private fun CollectionTrackListScreen(
                     track = track,
                     isFavourite = track.contentUri in favourites,
                     onToggleFavourite = {
-                        scope.launch { favRepo.toggle(track.contentUri) }
+                        viewModel.toggleFavourite(track.contentUri)
                     },
                     onClick = {
                         playback.playNow(track.contentUri, track.title, track.artist)
@@ -714,14 +705,14 @@ private fun CollectionTrackListScreen(
 
 @Composable
 fun LibraryScreen(
+    viewModel: LibraryViewModel = hiltViewModel(),
     searchQuery: String = "",
     sortOption: SongSortOption = SongSortOption.Title,
     listState: LazyListState
 ) {
     val context = LocalContext.current
-    val playback = LocalPlaybackConnection.current
-    val favRepo = remember { FavouritesRepository(context) }
-    val favourites by favRepo.observe().collectAsState(initial = emptySet())
+    val playback = viewModel.playback
+    val favourites by viewModel.favourites.collectAsState()
     val scope = rememberCoroutineScope()
     val audioPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         Manifest.permission.READ_MEDIA_AUDIO
@@ -811,7 +802,7 @@ fun LibraryScreen(
                 track = track,
                 isFavourite = track.contentUri in favourites,
                 onToggleFavourite = {
-                    scope.launch { favRepo.toggle(track.contentUri) }
+                    viewModel.toggleFavourite(track.contentUri)
                 },
                 onClick = {
                     playback.playNow(track.contentUri, track.title, track.artist)
@@ -1091,11 +1082,14 @@ private fun AlbumCard(album: Album, onClick: () -> Unit) {
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun AlbumDetailScreen(album: Album, onBack: () -> Unit) {
+private fun AlbumDetailScreen(
+    album: Album,
+    onBack: () -> Unit,
+    viewModel: LibraryViewModel = hiltViewModel(),
+) {
     val context = LocalContext.current
-    val playback = LocalPlaybackConnection.current
-    val favRepo = remember { FavouritesRepository(context) }
-    val favourites by favRepo.observe().collectAsState(initial = emptySet())
+    val playback = viewModel.playback
+    val favourites by viewModel.favourites.collectAsState()
     val scope = rememberCoroutineScope()
 
     val tracks by produceState<List<LocalTrack>>(
@@ -1133,7 +1127,7 @@ private fun AlbumDetailScreen(album: Album, onBack: () -> Unit) {
                     track = track,
                     isFavourite = track.contentUri in favourites,
                     onToggleFavourite = {
-                        scope.launch { favRepo.toggle(track.contentUri) }
+                        viewModel.toggleFavourite(track.contentUri)
                     },
                     onClick = {
                         playback.playNow(track.contentUri, track.title, track.artist)
