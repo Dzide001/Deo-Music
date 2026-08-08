@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{kt,kts}]
+max_line_length = 140
+ktlint_standard_function-naming = disabled
+ktlint_standard_argument-list-wrapping = disabled
+ktlint_function_signature_body_expression_wrapping = default
+
+[*.{xml,yml,yaml,toml,json}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false

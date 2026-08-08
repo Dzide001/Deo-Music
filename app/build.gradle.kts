@@ -1,8 +1,12 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import java.util.Properties
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
+// AGP 9 provides Kotlin support built in; the org.jetbrains.kotlin.android
+// plugin must not be applied. See https://kotl.in/gradle/agp-built-in-kotlin
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
 }
 
 val localProps = Properties().apply {
@@ -12,9 +16,8 @@ val localProps = Properties().apply {
     }
 }
 
-fun propOrEnv(key: String): String? {
-    return (localProps.getProperty(key) ?: System.getenv(key))?.takeIf { it.isNotBlank() }
-}
+fun propOrEnv(key: String): String? =
+    (localProps.getProperty(key) ?: System.getenv(key))?.takeIf { it.isNotBlank() }
 
 val releaseStoreFile = propOrEnv("RELEASE_STORE_FILE")
 val releaseStorePassword = propOrEnv("RELEASE_STORE_PASSWORD")
@@ -27,17 +30,19 @@ val hasReleaseSigning =
         !releaseKeyAlias.isNullOrBlank() &&
         !releaseKeyPassword.isNullOrBlank()
 
-val releaseVersionName = "v0.1.0"
+val releaseVersionName = "v0.2.0"
 
 android {
     namespace = "com.deox9.musicplayer"
-    compileSdk = 35
+    // Compile against 37 (required by current AndroidX); targetSdk stays at 36,
+    // which is what Google Play requires for uploads from 31 Aug 2026.
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.deox9.musicplayer"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 1
+        targetSdk = 36
+        versionCode = 2
         versionName = releaseVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -57,15 +62,32 @@ android {
         }
     }
 
+    // "foss" is the F-Droid-clean build: no web playback mode, no Google-dependent
+    // features. "full" adds them. Declared early on purpose — retrofitting flavours
+    // across a mature codebase is painful.
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("foss") {
+            dimension = "distribution"
+        }
+        create("full") {
+            dimension = "distribution"
+        }
+    }
+
     buildTypes {
-        release {
+        debug {
             isMinifyEnabled = false
+        }
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
             }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
         }
     }
@@ -74,69 +96,70 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
 
     buildFeatures {
         compose = true
     }
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.14"
+
+    lint {
+        warningsAsErrors = false
+        abortOnError = true
+        checkDependencies = true
     }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
 
-    applicationVariants.all {
-        if (buildType.name == "release") {
-            outputs.all {
-                @Suppress("DEPRECATION")
-                val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
-                output.outputFileName = "Deo-Music-${releaseVersionName}.apk"
-            }
-        }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
+    implementation(platform(libs.compose.bom))
 
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.2")
-    implementation("androidx.activity:activity-compose:1.9.0")
-    implementation(composeBom)
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.navigation:navigation-compose:2.7.7")
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.compose.ui)
+    implementation(libs.compose.ui.graphics)
+    implementation(libs.compose.ui.tooling.preview)
+    implementation(libs.compose.material3)
+    // No longer pulled in transitively by material3.
+    implementation(libs.compose.material.icons.extended)
 
-    // Media playback (open source)
-    implementation("androidx.media3:media3-exoplayer:1.3.1")
-    implementation("androidx.media3:media3-session:1.3.1")
-    implementation("androidx.media3:media3-ui:1.3.1")
+    // Media playback
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.session)
 
-    // Web playback mode container (browser-like tab)
-    implementation("androidx.webkit:webkit:1.11.0")
+    // Web playback mode container (browser-like tab) — "full" flavour only.
+    "fullImplementation"(libs.androidx.webkit)
 
     // Persistence
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation(libs.datastore.preferences)
 
     // Image loading
-    implementation("io.coil-kt:coil-compose:2.6.0")
+    implementation(libs.coil.compose)
 
     // Runtime baseline profile installer
-    implementation("androidx.profileinstaller:profileinstaller:1.3.1")
+    implementation(libs.androidx.profileinstaller)
 
-    testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
-    androidTestImplementation(composeBom)
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
-    debugImplementation("androidx.compose.ui:ui-tooling")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
+    testImplementation(libs.junit)
+    testImplementation(libs.turbine)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.kotlinx.coroutines.test)
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.espresso.core)
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    debugImplementation(libs.compose.ui.tooling)
+    debugImplementation(libs.compose.ui.test.manifest)
+    debugImplementation(libs.leakcanary)
 }
