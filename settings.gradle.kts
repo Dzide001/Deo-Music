@@ -31,3 +31,5 @@ include(":core:ui")
 
 // Feature modules.
 include(":feature:player")
+include(":feature:library")
+include(":feature:settings")

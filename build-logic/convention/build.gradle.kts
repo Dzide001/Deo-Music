@@ -13,6 +13,8 @@ java {
 dependencies {
     compileOnly(libs.android.gradlePlugin)
     compileOnly(libs.compose.gradlePlugin)
+    compileOnly(libs.ksp.gradlePlugin)
+    compileOnly(libs.hilt.gradlePlugin)
 }
 
 gradlePlugin {
@@ -24,6 +26,10 @@ gradlePlugin {
         register("androidLibraryCompose") {
             id = "deo.android.library.compose"
             implementationClass = "AndroidLibraryComposeConventionPlugin"
+        }
+        register("androidHilt") {
+            id = "deo.android.hilt"
+            implementationClass = "AndroidHiltConventionPlugin"
         }
     }
 }

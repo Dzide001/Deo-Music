@@ -28,6 +28,8 @@ detekt {
             "core/media/src/main/java",
             "core/ui/src/main/java",
             "feature/player/src/main/java",
+            "feature/library/src/main/java",
+            "feature/settings/src/main/java",
         ),
     )
     parallel = true

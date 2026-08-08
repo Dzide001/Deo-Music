@@ -7,6 +7,8 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
 }
 
 val localProps = Properties().apply {
@@ -128,8 +130,14 @@ dependencies {
     implementation(projects.core.media)
     implementation(projects.core.ui)
     implementation(projects.feature.player)
+    implementation(projects.feature.library)
+    implementation(projects.feature.settings)
 
     implementation(platform(libs.compose.bom))
+
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    implementation(libs.hilt.navigation.compose)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
