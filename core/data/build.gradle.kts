@@ -10,10 +10,17 @@ android {
 
 dependencies {
     implementation(projects.core.model)
+    implementation(projects.core.database)
     implementation(libs.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
 
+    implementation(libs.work.runtime.ktx)
+    implementation(libs.hilt.work)
+    ksp(libs.hilt.compiler.androidx)
+
     testImplementation(libs.junit)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.room.testing)
     testImplementation(libs.robolectric)
     testImplementation(libs.kotlinx.coroutines.test)
 }

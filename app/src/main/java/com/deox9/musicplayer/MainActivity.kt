@@ -87,6 +87,7 @@ import com.deox9.musicplayer.feature.player.QueueSidebar
 import com.deox9.musicplayer.feature.settings.SettingsSheet
 import com.deox9.musicplayer.feature.settings.SettingsViewModel
 import com.deox9.musicplayer.library.LocalMusicRepository
+import com.deox9.musicplayer.scanner.LibraryScanWorker
 import com.deox9.musicplayer.ui.AlbumSortOption
 import com.deox9.musicplayer.ui.CollectionSortOption
 import com.deox9.musicplayer.ui.SongSortOption
@@ -230,13 +231,22 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
     DisposableEffect(Unit) {
         // Restoring the last session is the service's job now: it happens in
         // PlaybackService.onCreate, which runs when the MediaController binds.
+
+        // Index on launch. Cheap when nothing changed, and it is what populates the
+        // library the first time the app runs.
+        LibraryScanWorker.enqueue(context)
         val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) {
                 LocalMusicRepository.invalidateCaches()
+                // A change means files were added, removed or retagged, so re-index.
+                // The worker uses KEEP, so a burst during a large copy coalesces
+                // into one scan rather than restarting it repeatedly.
+                LibraryScanWorker.enqueue(context)
             }
 
             override fun onChange(selfChange: Boolean, uri: Uri?) {
                 LocalMusicRepository.invalidateCaches()
+                LibraryScanWorker.enqueue(context)
             }
         }
 

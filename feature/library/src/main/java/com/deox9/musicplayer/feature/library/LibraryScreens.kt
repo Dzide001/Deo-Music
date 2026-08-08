@@ -42,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -62,9 +63,9 @@ import coil3.compose.AsyncImage
 import com.deox9.musicplayer.library.Album
 import com.deox9.musicplayer.library.FolderInfo
 import com.deox9.musicplayer.library.GenreInfo
-import com.deox9.musicplayer.library.LocalMusicRepository
 import com.deox9.musicplayer.library.LocalTrack
 import com.deox9.musicplayer.library.PlaylistInfo
+import com.deox9.musicplayer.scanner.LibraryScanWorker
 import com.deox9.musicplayer.ui.AlbumSortOption
 import com.deox9.musicplayer.ui.CollectionSortOption
 import com.deox9.musicplayer.ui.SongSortOption
@@ -75,16 +76,17 @@ import kotlinx.coroutines.withContext
 
 @Composable
 fun PlaylistsScreen(
+    viewModel: LibraryViewModel = hiltViewModel(),
     searchQuery: String = "",
     sortOption: CollectionSortOption = CollectionSortOption.Name,
     listState: LazyListState
 ) {
     val context = LocalContext.current
     var selected by remember { mutableStateOf<PlaylistInfo?>(null) }
+    // Still MediaStore: nothing imports the user's existing playlists into the
+    // schema yet, and reading an empty table would look like data loss.
     val playlists by produceState<List<PlaylistInfo>>(initialValue = emptyList()) {
-        value = withContext(Dispatchers.IO) {
-            LocalMusicRepository(context).getPlaylists()
-        }
+        value = viewModel.playlists()
     }
 
     if (selected != null) {
@@ -147,17 +149,14 @@ fun PlaylistsScreen(
 
 @Composable
 fun FoldersScreen(
+    viewModel: LibraryViewModel = hiltViewModel(),
     searchQuery: String = "",
     sortOption: CollectionSortOption = CollectionSortOption.Name,
     listState: LazyListState
 ) {
     val context = LocalContext.current
     var selected by remember { mutableStateOf<FolderInfo?>(null) }
-    val folders by produceState<List<FolderInfo>>(initialValue = emptyList()) {
-        value = withContext(Dispatchers.IO) {
-            LocalMusicRepository(context).getFolders()
-        }
-    }
+    val folders by viewModel.folders.collectAsState()
 
     if (selected != null) {
         FolderDetailScreen(
@@ -219,17 +218,14 @@ fun FoldersScreen(
 
 @Composable
 fun GenresScreen(
+    viewModel: LibraryViewModel = hiltViewModel(),
     searchQuery: String = "",
     sortOption: CollectionSortOption = CollectionSortOption.Name,
     listState: LazyListState
 ) {
     val context = LocalContext.current
     var selected by remember { mutableStateOf<GenreInfo?>(null) }
-    val genres by produceState<List<GenreInfo>>(initialValue = emptyList()) {
-        value = withContext(Dispatchers.IO) {
-            LocalMusicRepository(context).getGenres()
-        }
-    }
+    val genres by viewModel.genres.collectAsState()
 
     if (selected != null) {
         GenreDetailScreen(
@@ -311,11 +307,7 @@ fun SuggestedScreen(
         return
     }
 
-    val tracks by produceState<List<LocalTrack>>(initialValue = emptyList(), key1 = appSettings.suggestionsEnabled) {
-        value = withContext(Dispatchers.IO) {
-            LocalMusicRepository(context).getTracks(limit = 1500)
-        }
-    }
+    val tracks by viewModel.tracks.collectAsState()
 
     data class SuggestedRecommendation(
         val track: LocalTrack,
@@ -521,11 +513,7 @@ fun FavouritesScreen(
     val favourites by viewModel.favourites.collectAsState()
     val scope = rememberCoroutineScope()
 
-    val tracks by produceState<List<LocalTrack>>(initialValue = emptyList()) {
-        value = withContext(Dispatchers.IO) {
-            LocalMusicRepository(context).getTracks(limit = 3000)
-        }
-    }
+    val tracks by viewModel.tracks.collectAsState()
 
     val favTracks by produceState(
         initialValue = emptyList<LocalTrack>(),
@@ -590,13 +578,14 @@ fun FavouritesScreen(
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun PlaylistDetailScreen(
+    viewModel: LibraryViewModel = hiltViewModel(),
     playlist: PlaylistInfo,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
     val tracks by produceState<List<LocalTrack>>(initialValue = emptyList(), key1 = playlist.id) {
         value = withContext(Dispatchers.IO) {
-            LocalMusicRepository(context).getTracksByPlaylist(playlist.id)
+            viewModel.tracksByPlaylist(playlist.id)
         }
     }
 
@@ -610,13 +599,14 @@ private fun PlaylistDetailScreen(
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun GenreDetailScreen(
+    viewModel: LibraryViewModel = hiltViewModel(),
     genre: GenreInfo,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
     val tracks by produceState<List<LocalTrack>>(initialValue = emptyList(), key1 = genre.id) {
         value = withContext(Dispatchers.IO) {
-            LocalMusicRepository(context).getTracksByGenre(genre.id)
+            viewModel.tracksByGenre(genre.id)
         }
     }
 
@@ -630,13 +620,14 @@ private fun GenreDetailScreen(
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun FolderDetailScreen(
+    viewModel: LibraryViewModel = hiltViewModel(),
     folder: FolderInfo,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
     val tracks by produceState<List<LocalTrack>>(initialValue = emptyList(), key1 = folder.path) {
         value = withContext(Dispatchers.IO) {
-            LocalMusicRepository(context).getTracksByFolder(folder.path)
+            viewModel.tracksByFolder(folder.path)
         }
     }
 
@@ -732,17 +723,13 @@ fun LibraryScreen(
         hasPermission = granted
     }
 
-    val tracks by produceState<List<LocalTrack>>(
-        initialValue = emptyList(),
-        key1 = hasPermission
-    ) {
-        value = if (!hasPermission) {
-            emptyList()
-        } else {
-            withContext(Dispatchers.IO) {
-                LocalMusicRepository(context).getTracks(limit = 1500)
-            }
-        }
+    val tracks by viewModel.tracks.collectAsState()
+
+    // The launch-time scan runs before the permission dialog is answered, so a fresh
+    // install would otherwise show an empty library until something else triggered a
+    // rescan.
+    LaunchedEffect(hasPermission) {
+        if (hasPermission) LibraryScanWorker.enqueue(context)
     }
 
     if (!hasPermission) {
@@ -933,6 +920,7 @@ private fun LocalTrackRow(
 
 @Composable
 fun AlbumsScreen(
+    viewModel: LibraryViewModel = hiltViewModel(),
     searchQuery: String = "",
     sortOption: AlbumSortOption = AlbumSortOption.Name,
     listState: LazyListState
@@ -958,18 +946,9 @@ fun AlbumsScreen(
 
     var selectedAlbum by remember { mutableStateOf<Album?>(null) }
 
-    val albums by produceState<List<Album>>(
-        initialValue = emptyList(),
-        key1 = hasPermission
-    ) {
-        value = if (!hasPermission) {
-            emptyList()
-        } else {
-            withContext(Dispatchers.IO) {
-                LocalMusicRepository(context).getAlbums()
-            }
-        }
-    }
+    // Collected, not read via .value: the flow is started WhileSubscribed, so
+    // sampling .value without a collector returns the initial empty list forever.
+    val albums by viewModel.albums.collectAsState()
 
     if (selectedAlbum != null) {
         AlbumDetailScreen(
@@ -1097,7 +1076,7 @@ private fun AlbumDetailScreen(
         key1 = album.id
     ) {
         value = withContext(Dispatchers.IO) {
-            LocalMusicRepository(context).getTracksByAlbum(album.id)
+            viewModel.tracksByAlbum(album.id)
         }
     }
 

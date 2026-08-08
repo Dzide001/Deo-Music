@@ -137,6 +137,8 @@ dependencies {
     implementation(platform(libs.compose.bom))
 
     implementation(libs.hilt.android)
+    implementation(libs.work.runtime.ktx)
+    implementation(libs.hilt.work)
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
 

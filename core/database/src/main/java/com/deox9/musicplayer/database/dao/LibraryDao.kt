@@ -49,6 +49,12 @@ interface LibraryDao {
     @Query("SELECT * FROM folders WHERE isBlacklisted = 0 ORDER BY name COLLATE NOCASE ASC")
     fun observeFolders(): Flow<List<FolderEntity>>
 
+    @Query("SELECT * FROM genres ORDER BY name COLLATE NOCASE ASC")
+    fun observeGenres(): Flow<List<GenreEntity>>
+
+    @Query("SELECT * FROM genres ORDER BY name COLLATE NOCASE ASC")
+    suspend fun observeGenresList(): List<GenreEntity>
+
     /**
      * Full-text search over the FTS index.
      *
@@ -68,6 +74,96 @@ interface LibraryDao {
     @Query("SELECT COUNT(*) FROM tracks")
     suspend fun trackCount(): Int
 
+    // ---- Joined reads --------------------------------------------------------
+
+    @Query(
+        """
+        SELECT t.id, t.title, t.mediaUri, t.durationMs,
+               ar.name AS artistName, al.title AS albumTitle, t.albumId,
+               t.trackNumber, t.discNumber, f.path AS folderPath, g.name AS genreName,
+               t.dateAddedMs
+        FROM tracks t
+        LEFT JOIN artists ar ON ar.id = t.artistId
+        LEFT JOIN albums  al ON al.id = t.albumId
+        LEFT JOIN folders f  ON f.id  = t.folderId
+        LEFT JOIN genres  g  ON g.id  = t.genreId
+        ORDER BY t.sortTitle COLLATE NOCASE ASC
+        """,
+    )
+    fun observeTracksWithNames(): Flow<List<TrackWithNames>>
+
+    @Query(
+        """
+        SELECT t.id, t.title, t.mediaUri, t.durationMs,
+               ar.name AS artistName, al.title AS albumTitle, t.albumId,
+               t.trackNumber, t.discNumber, f.path AS folderPath, g.name AS genreName,
+               t.dateAddedMs
+        FROM tracks t
+        LEFT JOIN artists ar ON ar.id = t.artistId
+        LEFT JOIN albums  al ON al.id = t.albumId
+        LEFT JOIN folders f  ON f.id  = t.folderId
+        LEFT JOIN genres  g  ON g.id  = t.genreId
+        WHERE t.albumId = :albumId
+        ORDER BY t.discNumber ASC, t.trackNumber ASC, t.sortTitle COLLATE NOCASE ASC
+        """,
+    )
+    suspend fun albumTracksWithNames(albumId: Long): List<TrackWithNames>
+
+    @Query(
+        """
+        SELECT al.id, al.title, ar.name AS artistName, al.artworkUri,
+               COUNT(t.id) AS trackCount, al.year, al.isCompilation,
+               al.mediaStoreAlbumId
+        FROM albums al
+        LEFT JOIN artists ar ON ar.id = al.albumArtistId
+        LEFT JOIN tracks  t  ON t.albumId = al.id
+        GROUP BY al.id
+        ORDER BY al.sortTitle COLLATE NOCASE ASC
+        """,
+    )
+    fun observeAlbumsWithArtist(): Flow<List<AlbumWithArtist>>
+
+    @Query(
+        """
+        SELECT g.id, g.name, COUNT(t.id) AS trackCount
+        FROM genres g
+        LEFT JOIN tracks t ON t.genreId = g.id
+        GROUP BY g.id
+        ORDER BY g.name COLLATE NOCASE ASC
+        """,
+    )
+    fun observeGenreCounts(): Flow<List<NamedCount>>
+
+    @Query(
+        """
+        SELECT f.id, f.path AS name, COUNT(t.id) AS trackCount
+        FROM folders f
+        LEFT JOIN tracks t ON t.folderId = f.id
+        WHERE f.isBlacklisted = 0
+        GROUP BY f.id
+        ORDER BY f.name COLLATE NOCASE ASC
+        """,
+    )
+    fun observeFolderCounts(): Flow<List<NamedCount>>
+
+    @Query(
+        """
+        SELECT t.id, t.title, t.mediaUri, t.durationMs,
+               ar.name AS artistName, al.title AS albumTitle, t.albumId,
+               t.trackNumber, t.discNumber, f.path AS folderPath, g.name AS genreName,
+               t.dateAddedMs
+        FROM tracks t
+        JOIN tracks_fts ON t.rowid = tracks_fts.rowid
+        LEFT JOIN artists ar ON ar.id = t.artistId
+        LEFT JOIN albums  al ON al.id = t.albumId
+        LEFT JOIN folders f  ON f.id  = t.folderId
+        LEFT JOIN genres  g  ON g.id  = t.genreId
+        WHERE tracks_fts MATCH :query
+        ORDER BY t.sortTitle COLLATE NOCASE ASC
+        """,
+    )
+    suspend fun searchTracksWithNames(query: String): List<TrackWithNames>
+
     // ---- Writes --------------------------------------------------------------
 
     @Upsert
@@ -81,6 +177,57 @@ interface LibraryDao {
 
     @Upsert
     suspend fun upsertFolders(folders: List<FolderEntity>): List<Long>
+
+    @Query("SELECT id FROM artists WHERE name = :name")
+    suspend fun artistIdByName(name: String): Long?
+
+    @Query("SELECT id FROM genres WHERE name = :name")
+    suspend fun genreIdByName(name: String): Long?
+
+    @Query("SELECT id FROM folders WHERE path = :path")
+    suspend fun folderIdByPath(path: String): Long?
+
+    @Query("SELECT id FROM albums WHERE title = :title AND albumArtistId IS :albumArtistId")
+    suspend fun albumId(title: String, albumArtistId: Long?): Long?
+
+    /**
+     * Resolve-or-insert helpers for the lookup tables.
+     *
+     * These exist for the same reason as [upsertScannedTracks]. @Upsert matches on the
+     * primary key, and a freshly built entity has id 0, so on a rescan the insert
+     * collides with the unique natural key, the fallback update finds no row with
+     * id 0, and the returned id is meaningless. Tracks then reference an artist or
+     * album that does not exist and the whole scan dies on a foreign-key violation —
+     * on the *second* scan, not the first.
+     */
+    @Transaction
+    suspend fun resolveArtists(artists: List<ArtistEntity>): List<Long> =
+        artists.map { artist ->
+            artistIdByName(artist.name)
+                ?: upsertArtists(listOf(artist)).first()
+        }
+
+    @Transaction
+    suspend fun resolveGenres(genres: List<GenreEntity>): List<Long> =
+        genres.map { genre -> genreIdByName(genre.name) ?: upsertGenres(listOf(genre)).first() }
+
+    @Transaction
+    suspend fun resolveFolders(folders: List<FolderEntity>): List<Long> =
+        folders.map { folder -> folderIdByPath(folder.path) ?: upsertFolders(listOf(folder)).first() }
+
+    @Transaction
+    suspend fun resolveAlbums(albums: List<AlbumEntity>): List<Long> =
+        albums.map { album ->
+            val existing = albumId(album.title, album.albumArtistId)
+            if (existing != null) {
+                // Refresh derived fields — disc count and year can change as more of
+                // an album is indexed.
+                upsertAlbums(listOf(album.copy(id = existing)))
+                existing
+            } else {
+                upsertAlbums(listOf(album)).first()
+            }
+        }
 
     @Upsert
     suspend fun upsertTracks(tracks: List<TrackEntity>)
@@ -111,6 +258,15 @@ interface LibraryDao {
 
     @Query("DELETE FROM tracks WHERE mediaUri IN (:mediaUris)")
     suspend fun deleteTracksByUri(mediaUris: List<String>)
+
+    /**
+     * URIs of tracks that came from MediaStore.
+     *
+     * Scoped to that source so pruning after a MediaStore pass cannot delete rows
+     * indexed from anywhere else.
+     */
+    @Query("SELECT mediaUri FROM tracks WHERE sourceId IS NOT NULL")
+    suspend fun mediaStoreTrackUris(): List<String>
 
     /**
      * Removes rows a rescan no longer found.

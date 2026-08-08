@@ -8,6 +8,13 @@ plugins {
 
 android {
     namespace = "com.deox9.musicplayer.core.database"
+
+    // MigrationTestHelper loads the exported schemas from assets, so the committed
+    // schema directory has to be on the test asset path.
+    sourceSets {
+        getByName("test") { assets.srcDirs("$projectDir/schemas") }
+        getByName("androidTest") { assets.srcDirs("$projectDir/schemas") }
+    }
 }
 
 room {

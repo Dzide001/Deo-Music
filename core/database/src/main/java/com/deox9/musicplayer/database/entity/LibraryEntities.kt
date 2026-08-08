@@ -54,6 +54,11 @@ data class AlbumEntity(
     val albumArtistId: Long?,
     val year: Int? = null,
     val artworkUri: String? = null,
+    /**
+     * MediaStore ALBUM_ID, used to resolve artwork from its albumart provider.
+     * A track id will not work there — the provider is keyed by album.
+     */
+    val mediaStoreAlbumId: Long? = null,
     val discCount: Int = 1,
     /** True when the album is a compilation, from the tag rather than inferred. */
     val isCompilation: Boolean = false,
