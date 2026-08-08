@@ -126,6 +126,8 @@ dependencies {
     implementation(projects.core.data)
     implementation(projects.core.datastore)
     implementation(projects.core.media)
+    implementation(projects.core.ui)
+    implementation(projects.feature.player)
 
     implementation(platform(libs.compose.bom))
 

@@ -7,16 +7,16 @@
     <ID>ComplexCondition:WebPlayback.kt$searchQuery.trim().length &lt; 2 &amp;&amp; !restoredFromSavedState &amp;&amp; (currentUrl.isBlank() || currentUrl == "about:blank")</ID>
     <ID>CyclomaticComplexMethod:MainActivity.kt$@Composable private fun AppHeader( mode: RootMode, localTab: LocalCategoryTab, localSearchQuery: String, webSearchQuery: String, onLocalSearchChange: (String) -&gt; Unit, onWebSearchChange: (String) -&gt; Unit, showSortMenu: Boolean, onShowSortMenuChange: (Boolean) -&gt; Unit, onOpenSettings: () -&gt; Unit, songSortOption: SongSortOption, albumSortOption: AlbumSortOption, collectionSortOption: CollectionSortOption, onSongSortChange: (SongSortOption) -&gt; Unit, onAlbumSortChange: (AlbumSortOption) -&gt; Unit, onCollectionSortChange: (CollectionSortOption) -&gt; Unit )</ID>
     <ID>CyclomaticComplexMethod:MainActivity.kt$@Composable private fun AppRoot()</ID>
-    <ID>CyclomaticComplexMethod:MainActivity.kt$@Composable private fun QueueSidebar( queue: List&lt;QueueEntry&gt;, currentIndex: Int, onDismiss: () -&gt; Unit )</ID>
     <ID>CyclomaticComplexMethod:MainActivity.kt$@Composable private fun SuggestedScreen( listState: LazyListState )</ID>
-    <ID>CyclomaticComplexMethod:MainActivity.kt$@OptIn(ExperimentalFoundationApi::class) @Composable private fun ExpandedNowPlayingScreen( session: PlaybackState?, onMinimize: () -&gt; Unit, onOpenQueue: () -&gt; Unit, onGoToArtist: (String) -&gt; Unit, onViewAlbum: (String) -&gt; Unit )</ID>
+    <ID>CyclomaticComplexMethod:PlayerScreens.kt$@Composable fun QueueSidebar( queue: List&lt;QueueEntry&gt;, currentIndex: Int, onDismiss: () -&gt; Unit )</ID>
+    <ID>CyclomaticComplexMethod:PlayerScreens.kt$@OptIn(ExperimentalFoundationApi::class) @Composable fun ExpandedNowPlayingScreen( session: PlaybackState?, onMinimize: () -&gt; Unit, onOpenQueue: () -&gt; Unit, onGoToArtist: (String) -&gt; Unit, onViewAlbum: (String) -&gt; Unit )</ID>
     <ID>CyclomaticComplexMethod:WebPlayback.kt$@Composable private fun WebPlaybackScreen( searchQuery: String = "", isVisible: Boolean, onWebViewReady: (WebView) -&gt; Unit )</ID>
     <ID>Indentation:WebPlayback.kt$ </ID>
     <ID>LongMethod:MainActivity.kt$@Composable private fun AppHeader( mode: RootMode, localTab: LocalCategoryTab, localSearchQuery: String, webSearchQuery: String, onLocalSearchChange: (String) -&gt; Unit, onWebSearchChange: (String) -&gt; Unit, showSortMenu: Boolean, onShowSortMenuChange: (Boolean) -&gt; Unit, onOpenSettings: () -&gt; Unit, songSortOption: SongSortOption, albumSortOption: AlbumSortOption, collectionSortOption: CollectionSortOption, onSongSortChange: (SongSortOption) -&gt; Unit, onAlbumSortChange: (AlbumSortOption) -&gt; Unit, onCollectionSortChange: (CollectionSortOption) -&gt; Unit )</ID>
     <ID>LongMethod:MainActivity.kt$@Composable private fun AppRoot()</ID>
-    <ID>LongMethod:MainActivity.kt$@Composable private fun QueueSidebar( queue: List&lt;QueueEntry&gt;, currentIndex: Int, onDismiss: () -&gt; Unit )</ID>
     <ID>LongMethod:MainActivity.kt$@Composable private fun SuggestedScreen( listState: LazyListState )</ID>
-    <ID>LongMethod:MainActivity.kt$@OptIn(ExperimentalFoundationApi::class) @Composable private fun ExpandedNowPlayingScreen( session: PlaybackState?, onMinimize: () -&gt; Unit, onOpenQueue: () -&gt; Unit, onGoToArtist: (String) -&gt; Unit, onViewAlbum: (String) -&gt; Unit )</ID>
+    <ID>LongMethod:PlayerScreens.kt$@Composable fun QueueSidebar( queue: List&lt;QueueEntry&gt;, currentIndex: Int, onDismiss: () -&gt; Unit )</ID>
+    <ID>LongMethod:PlayerScreens.kt$@OptIn(ExperimentalFoundationApi::class) @Composable fun ExpandedNowPlayingScreen( session: PlaybackState?, onMinimize: () -&gt; Unit, onOpenQueue: () -&gt; Unit, onGoToArtist: (String) -&gt; Unit, onViewAlbum: (String) -&gt; Unit )</ID>
     <ID>LongMethod:WebPlayback.kt$@Composable private fun WebPlaybackScreen( searchQuery: String = "", isVisible: Boolean, onWebViewReady: (WebView) -&gt; Unit )</ID>
     <ID>LongParameterList:PlaybackSessionRepository.kt$PlaybackSessionRepository$( uri: String, title: String, artist: String, positionMs: Long, durationMs: Long, isPlaying: Boolean, queue: List&lt;QueueItem&gt;, currentIndex: Int, shuffleEnabled: Boolean = false, repeatMode: Int = 0, playerVolume: Float = 1f, album: String = "", albumArtUri: String = "" )</ID>
     <ID>LoopWithTooManyJumpStatements:PlaybackService.kt$PlaybackService$while</ID>
@@ -28,8 +28,6 @@
     <ID>NoConsecutiveBlankLines:MainActivity.kt$ </ID>
     <ID>NoConsecutiveBlankLines:WebPlayback.kt$ </ID>
     <ID>ReturnCount:WebPlayback.kt$private fun shouldBlockWebResource(rawUrl: String): Boolean</ID>
-    <ID>UnusedParameter:MainActivity.kt$contentDescription: String</ID>
-    <ID>UnusedParameter:MainActivity.kt$onOpenQueue: () -&gt; Unit</ID>
     <ID>Wrapping:MainActivity.kt$(</ID>
   </CurrentIssues>
 </SmellBaseline>

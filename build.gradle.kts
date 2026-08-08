@@ -26,6 +26,8 @@ detekt {
             "core/data/src/main/java",
             "core/datastore/src/main/java",
             "core/media/src/main/java",
+            "core/ui/src/main/java",
+            "feature/player/src/main/java",
         ),
     )
     parallel = true

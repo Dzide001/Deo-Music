@@ -27,3 +27,7 @@ include(":core:model")
 include(":core:datastore")
 include(":core:data")
 include(":core:media")
+include(":core:ui")
+
+// Feature modules.
+include(":feature:player")
