@@ -122,6 +122,11 @@ kotlin {
 }
 
 dependencies {
+    implementation(projects.core.model)
+    implementation(projects.core.data)
+    implementation(projects.core.datastore)
+    implementation(projects.core.media)
+
     implementation(platform(libs.compose.bom))
 
     implementation(libs.androidx.core.ktx)
@@ -135,9 +140,7 @@ dependencies {
     // No longer pulled in transitively by material3.
     implementation(libs.compose.material.icons.extended)
 
-    // Media playback
-    implementation(libs.media3.exoplayer)
-    implementation(libs.media3.session)
+    // Media3 comes transitively from :core:media, which exposes it as api().
 
     // Web playback mode container (browser-like tab) — "full" flavour only.
     "fullImplementation"(libs.androidx.webkit)

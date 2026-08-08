@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 pluginManagement {
+    includeBuild("build-logic")
     repositories {
         google()
         mavenCentral()
@@ -15,5 +16,14 @@ dependencyResolutionManagement {
     }
 }
 
+enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
+
 rootProject.name = "MusicPlayer"
+
 include(":app")
+
+// Shared, UI-free layers.
+include(":core:model")
+include(":core:datastore")
+include(":core:data")
+include(":core:media")

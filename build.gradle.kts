@@ -17,7 +17,17 @@ detekt {
     // MainActivity.kt. New violations still fail the build. Entries should be
     // deleted as the UI is split into feature modules — the goal is no baseline.
     baseline = rootProject.file("config/detekt/baseline.xml")
-    source.setFrom(files("app/src/main/java", "app/src/foss/java", "app/src/full/java"))
+    source.setFrom(
+        files(
+            "app/src/main/java",
+            "app/src/foss/java",
+            "app/src/full/java",
+            "core/model/src/main/java",
+            "core/data/src/main/java",
+            "core/datastore/src/main/java",
+            "core/media/src/main/java",
+        ),
+    )
     parallel = true
 }
 
