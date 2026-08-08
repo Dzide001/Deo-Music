@@ -123,10 +123,11 @@ import com.deox9.musicplayer.library.RecommendationSignals
 import com.deox9.musicplayer.library.RecommendationSignalsRepository
 import com.deox9.musicplayer.lyrics.LyricsData
 import com.deox9.musicplayer.lyrics.LyricsRepository
-import com.deox9.musicplayer.player.PlaybackService
-import com.deox9.musicplayer.player.storage.PlaybackSessionEntity
-import com.deox9.musicplayer.player.storage.PlaybackSessionRepository
-import com.deox9.musicplayer.player.storage.QueueItem
+import com.deox9.musicplayer.player.LocalPlaybackConnection
+import com.deox9.musicplayer.player.PlaybackState
+import com.deox9.musicplayer.player.ProvidePlaybackConnection
+import com.deox9.musicplayer.player.QueueEntry
+import com.deox9.musicplayer.player.rememberPlaybackConnection
 import com.deox9.musicplayer.settings.AppSettings
 import com.deox9.musicplayer.settings.AppSettingsRepository
 import com.deox9.musicplayer.web.WebPlayback
@@ -148,7 +149,9 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(
                 colorScheme = if (appSettings.darkThemeEnabled) darkColorScheme() else lightColorScheme()
             ) {
-                AppRoot()
+                ProvidePlaybackConnection(rememberPlaybackConnection()) {
+                    AppRoot()
+                }
             }
         }
     }
@@ -244,7 +247,6 @@ private fun AppRoot() {
     var prevQueueSignature by rememberSaveable { mutableStateOf("") }
     var suppressAutoExpand by rememberSaveable { mutableStateOf(false) }
     var didInitQueueSnapshot by rememberSaveable { mutableStateOf(false) }
-    var didSendRestoreIntent by rememberSaveable { mutableStateOf(false) }
     var showPerfOverlay by rememberSaveable { mutableStateOf(false) }
     var webPlaybackView by remember { mutableStateOf<WebView?>(null) }
     var lastPausedWebForLocalUri by rememberSaveable { mutableStateOf("") }
@@ -257,11 +259,11 @@ private fun AppRoot() {
     val suggestedListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     val favouritesListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
 
-    val playbackSessionRepository = remember {
-        PlaybackSessionRepository(context)
-    }
-
-    val session by playbackSessionRepository.observe().collectAsState(initial = null)
+    val playback = LocalPlaybackConnection.current
+    val playbackState by playback.state.collectAsState()
+    // Null means "nothing loaded", which is what the rest of the UI already
+    // branches on. Everything else reads straight off the bound controller.
+    val session = playbackState.takeIf { it.hasTrack }
 
     RequestNotificationPermission()
 
@@ -271,14 +273,8 @@ private fun AppRoot() {
     }
 
     DisposableEffect(Unit) {
-        if (!didSendRestoreIntent) {
-            val restoreIntent = Intent(context, PlaybackService::class.java).apply {
-                action = PlaybackService.ACTION_RESTORE_LAST
-            }
-            sendPlaybackIntent(context, restoreIntent)
-            didSendRestoreIntent = true
-        }
-
+        // Restoring the last session is the service's job now: it happens in
+        // PlaybackService.onCreate, which runs when the MediaController binds.
         val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) {
                 LocalMusicRepository.invalidateCaches()
@@ -1200,8 +1196,9 @@ private fun SuggestedScreen(
     val scope = rememberCoroutineScope()
     val settingsRepository = remember { AppSettingsRepository(context) }
     val appSettings by settingsRepository.observe().collectAsState(initial = AppSettings())
-    val playbackSessionRepository = remember { PlaybackSessionRepository(context) }
-    val session by playbackSessionRepository.observe().collectAsState(initial = null)
+    val playback = LocalPlaybackConnection.current
+    val playbackState by playback.state.collectAsState()
+    val session = playbackState.takeIf { it.hasTrack }
     val favRepo = remember { FavouritesRepository(context) }
     val favourites by favRepo.observe().collectAsState(initial = emptySet())
     val recommendationSignalsRepository = remember { RecommendationSignalsRepository(context) }
@@ -1371,31 +1368,13 @@ private fun SuggestedScreen(
                             scope.launch { favRepo.toggle(rec.track.contentUri) }
                         },
                         onClick = {
-                            val intent = Intent(context, PlaybackService::class.java).apply {
-                                action = PlaybackService.ACTION_PLAY_URI
-                                putExtra(PlaybackService.EXTRA_URI, rec.track.contentUri)
-                                putExtra(PlaybackService.EXTRA_TITLE, rec.track.title)
-                                putExtra(PlaybackService.EXTRA_ARTIST, rec.track.artist)
-                            }
-                            sendPlaybackIntent(context, intent)
+                            playback.playNow(rec.track.contentUri, rec.track.title, rec.track.artist)
                         },
                         onPlayNext = {
-                            val intent = Intent(context, PlaybackService::class.java).apply {
-                                action = PlaybackService.ACTION_PLAY_NEXT
-                                putExtra(PlaybackService.EXTRA_URI, rec.track.contentUri)
-                                putExtra(PlaybackService.EXTRA_TITLE, rec.track.title)
-                                putExtra(PlaybackService.EXTRA_ARTIST, rec.track.artist)
-                            }
-                            sendPlaybackIntent(context, intent)
+                            playback.playNext(rec.track.contentUri, rec.track.title, rec.track.artist)
                         },
                         onAddToQueue = {
-                            val intent = Intent(context, PlaybackService::class.java).apply {
-                                action = PlaybackService.ACTION_ADD_TO_QUEUE
-                                putExtra(PlaybackService.EXTRA_URI, rec.track.contentUri)
-                                putExtra(PlaybackService.EXTRA_TITLE, rec.track.title)
-                                putExtra(PlaybackService.EXTRA_ARTIST, rec.track.artist)
-                            }
-                            sendPlaybackIntent(context, intent)
+                            playback.addToQueue(rec.track.contentUri, rec.track.title, rec.track.artist)
                         }
                     )
                     Text(
@@ -1440,6 +1419,7 @@ private fun FavouritesScreen(
     listState: LazyListState
 ) {
     val context = LocalContext.current
+    val playback = LocalPlaybackConnection.current
     val favRepo = remember { FavouritesRepository(context) }
     val favourites by favRepo.observe().collectAsState(initial = emptySet())
     val scope = rememberCoroutineScope()
@@ -1496,31 +1476,13 @@ private fun FavouritesScreen(
                     scope.launch { favRepo.toggle(track.contentUri) }
                 },
                 onClick = {
-                    val playIntent = Intent(context, PlaybackService::class.java).apply {
-                        action = PlaybackService.ACTION_PLAY_URI
-                        putExtra(PlaybackService.EXTRA_URI, track.contentUri)
-                        putExtra(PlaybackService.EXTRA_TITLE, track.title)
-                        putExtra(PlaybackService.EXTRA_ARTIST, track.artist)
-                    }
-                    sendPlaybackIntent(context, playIntent)
+                    playback.playNow(track.contentUri, track.title, track.artist)
                 },
                 onPlayNext = {
-                    val nextIntent = Intent(context, PlaybackService::class.java).apply {
-                        action = PlaybackService.ACTION_PLAY_NEXT
-                        putExtra(PlaybackService.EXTRA_URI, track.contentUri)
-                        putExtra(PlaybackService.EXTRA_TITLE, track.title)
-                        putExtra(PlaybackService.EXTRA_ARTIST, track.artist)
-                    }
-                    sendPlaybackIntent(context, nextIntent)
+                    playback.playNext(track.contentUri, track.title, track.artist)
                 },
                 onAddToQueue = {
-                    val queueIntent = Intent(context, PlaybackService::class.java).apply {
-                        action = PlaybackService.ACTION_ADD_TO_QUEUE
-                        putExtra(PlaybackService.EXTRA_URI, track.contentUri)
-                        putExtra(PlaybackService.EXTRA_TITLE, track.title)
-                        putExtra(PlaybackService.EXTRA_ARTIST, track.artist)
-                    }
-                    sendPlaybackIntent(context, queueIntent)
+                    playback.addToQueue(track.contentUri, track.title, track.artist)
                 }
             )
             HorizontalDivider()
@@ -1596,6 +1558,7 @@ private fun CollectionTrackListScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val playback = LocalPlaybackConnection.current
     val favRepo = remember { FavouritesRepository(context) }
     val favourites by favRepo.observe().collectAsState(initial = emptySet())
     val scope = rememberCoroutineScope()
@@ -1629,31 +1592,13 @@ private fun CollectionTrackListScreen(
                         scope.launch { favRepo.toggle(track.contentUri) }
                     },
                     onClick = {
-                        val intent = Intent(context, PlaybackService::class.java).apply {
-                            action = PlaybackService.ACTION_PLAY_URI
-                            putExtra(PlaybackService.EXTRA_URI, track.contentUri)
-                            putExtra(PlaybackService.EXTRA_TITLE, track.title)
-                            putExtra(PlaybackService.EXTRA_ARTIST, track.artist)
-                        }
-                        sendPlaybackIntent(context, intent)
+                        playback.playNow(track.contentUri, track.title, track.artist)
                     },
                     onPlayNext = {
-                        val intent = Intent(context, PlaybackService::class.java).apply {
-                            action = PlaybackService.ACTION_PLAY_NEXT
-                            putExtra(PlaybackService.EXTRA_URI, track.contentUri)
-                            putExtra(PlaybackService.EXTRA_TITLE, track.title)
-                            putExtra(PlaybackService.EXTRA_ARTIST, track.artist)
-                        }
-                        sendPlaybackIntent(context, intent)
+                        playback.playNext(track.contentUri, track.title, track.artist)
                     },
                     onAddToQueue = {
-                        val intent = Intent(context, PlaybackService::class.java).apply {
-                            action = PlaybackService.ACTION_ADD_TO_QUEUE
-                            putExtra(PlaybackService.EXTRA_URI, track.contentUri)
-                            putExtra(PlaybackService.EXTRA_TITLE, track.title)
-                            putExtra(PlaybackService.EXTRA_ARTIST, track.artist)
-                        }
-                        sendPlaybackIntent(context, intent)
+                        playback.addToQueue(track.contentUri, track.title, track.artist)
                     }
                 )
             }
@@ -1663,11 +1608,12 @@ private fun CollectionTrackListScreen(
 
 @Composable
 private fun MiniPlayerBar(
-    session: PlaybackSessionEntity?,
+    session: PlaybackState?,
     onExpand: () -> Unit,
     onOpenQueue: () -> Unit
 ) {
     val context = LocalContext.current
+    val playback = LocalPlaybackConnection.current
     val title = session?.title ?: "Nothing playing"
     val artist = session?.artist ?: "Select a track from Library"
     val isPlaying = session?.isPlaying ?: false
@@ -1695,10 +1641,7 @@ private fun MiniPlayerBar(
             OutlinedButton(
                 enabled = session != null,
                 onClick = {
-                    val intent = Intent(context, PlaybackService::class.java).apply {
-                        action = PlaybackService.ACTION_SKIP_PREV
-                    }
-                    sendPlaybackIntent(context, intent)
+                    playback.skipPrevious()
                 }
             ) {
                 Text("Prev")
@@ -1707,10 +1650,7 @@ private fun MiniPlayerBar(
             OutlinedButton(
                 enabled = session != null,
                 onClick = {
-                    val intent = Intent(context, PlaybackService::class.java).apply {
-                        action = PlaybackService.ACTION_TOGGLE_PLAY_PAUSE
-                    }
-                    sendPlaybackIntent(context, intent)
+                    playback.togglePlayPause()
                 }
             ) {
                 Text(if (isPlaying) "Pause" else "Play")
@@ -1719,14 +1659,7 @@ private fun MiniPlayerBar(
             OutlinedButton(
                 enabled = session != null,
                 onClick = {
-                    val seekIntent = Intent(context, PlaybackService::class.java).apply {
-                        action = PlaybackService.ACTION_SEEK_TO
-                        putExtra(
-                            PlaybackService.EXTRA_SEEK_TO_MS,
-                            ((session?.positionMs ?: 0L) + 10_000L).coerceAtLeast(0L)
-                        )
-                    }
-                    sendPlaybackIntent(context, seekIntent)
+                    playback.seekTo(((session?.positionMs ?: 0L) + 10_000L).coerceAtLeast(0L))
                 }
             ) {
                 Text("+10s")
@@ -1735,10 +1668,7 @@ private fun MiniPlayerBar(
             OutlinedButton(
                 enabled = session != null,
                 onClick = {
-                    val intent = Intent(context, PlaybackService::class.java).apply {
-                        action = PlaybackService.ACTION_SKIP_NEXT
-                    }
-                    sendPlaybackIntent(context, intent)
+                    playback.skipNext()
                 }
             ) {
                 Text("Next")
@@ -1758,13 +1688,14 @@ private fun MiniPlayerBar(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ExpandedNowPlayingScreen(
-    session: PlaybackSessionEntity?,
+    session: PlaybackState?,
     onMinimize: () -> Unit,
     onOpenQueue: () -> Unit,
     onGoToArtist: (String) -> Unit,
     onViewAlbum: (String) -> Unit
 ) {
     val context = LocalContext.current
+    val playback = LocalPlaybackConnection.current
     val favRepo = remember { FavouritesRepository(context) }
     val localRepo = remember { LocalMusicRepository(context) }
     val lyricsRepository = remember { LyricsRepository(context) }
@@ -2051,11 +1982,7 @@ private fun ExpandedNowPlayingScreen(
             value = sliderPosition,
             onValueChange = { sliderPosition = it },
             onValueChangeFinished = {
-                val seekIntent = Intent(context, PlaybackService::class.java).apply {
-                    action = PlaybackService.ACTION_SEEK_TO
-                    putExtra(PlaybackService.EXTRA_SEEK_TO_MS, sliderPosition.toLong())
-                }
-                sendPlaybackIntent(context, seekIntent)
+                playback.seekTo(sliderPosition.toLong())
             },
             valueRange = 0f..durationMs.toFloat(),
             enabled = session != null
@@ -2079,11 +2006,7 @@ private fun ExpandedNowPlayingScreen(
                 value = playerVolume,
                 onValueChange = { newVolume ->
                     playerVolume = newVolume
-                    val volumeIntent = Intent(context, PlaybackService::class.java).apply {
-                        action = PlaybackService.ACTION_SET_PLAYER_VOLUME
-                        putExtra(PlaybackService.EXTRA_PLAYER_VOLUME, newVolume)
-                    }
-                    sendPlaybackIntent(context, volumeIntent)
+                    playback.setVolume(newVolume)
                 },
                 valueRange = 0f..1f,
                 modifier = Modifier
@@ -2109,10 +2032,7 @@ private fun ExpandedNowPlayingScreen(
                     symbol = "⏮",
                     contentDescription = "Previous",
                     onClick = {
-                        val intent = Intent(context, PlaybackService::class.java).apply {
-                            action = PlaybackService.ACTION_SKIP_PREV
-                        }
-                        sendPlaybackIntent(context, intent)
+                        playback.skipPrevious()
                     }
                 )
                 IconActionButton(
@@ -2122,10 +2042,7 @@ private fun ExpandedNowPlayingScreen(
                     contentDescription = "Shuffle",
                     selected = shuffleEnabled,
                     onClick = {
-                        val intent = Intent(context, PlaybackService::class.java).apply {
-                            action = PlaybackService.ACTION_TOGGLE_SHUFFLE
-                        }
-                        sendPlaybackIntent(context, intent)
+                        playback.toggleShuffle()
                     }
                 )
                 IconActionButton(
@@ -2135,10 +2052,7 @@ private fun ExpandedNowPlayingScreen(
                     contentDescription = if (isPlaying) "Pause" else "Play",
                     selected = isPlaying,
                     onClick = {
-                        val intent = Intent(context, PlaybackService::class.java).apply {
-                            action = PlaybackService.ACTION_TOGGLE_PLAY_PAUSE
-                        }
-                        sendPlaybackIntent(context, intent)
+                        playback.togglePlayPause()
                     }
                 )
                 IconActionButton(
@@ -2152,10 +2066,7 @@ private fun ExpandedNowPlayingScreen(
                     contentDescription = "Repeat",
                     selected = repeatMode != 0,
                     onClick = {
-                        val intent = Intent(context, PlaybackService::class.java).apply {
-                            action = PlaybackService.ACTION_CYCLE_REPEAT
-                        }
-                        sendPlaybackIntent(context, intent)
+                        playback.cycleRepeat()
                     }
                 )
                 IconActionButton(
@@ -2164,10 +2075,7 @@ private fun ExpandedNowPlayingScreen(
                     symbol = "⏭",
                     contentDescription = "Next",
                     onClick = {
-                        val intent = Intent(context, PlaybackService::class.java).apply {
-                            action = PlaybackService.ACTION_SKIP_NEXT
-                        }
-                        sendPlaybackIntent(context, intent)
+                        playback.skipNext()
                     }
                 )
             }
@@ -2179,40 +2087,28 @@ private fun ExpandedNowPlayingScreen(
                 OutlinedButton(
                     enabled = session != null,
                     onClick = {
-                        val intent = Intent(context, PlaybackService::class.java).apply {
-                            action = PlaybackService.ACTION_SKIP_PREV
-                        }
-                        sendPlaybackIntent(context, intent)
+                        playback.skipPrevious()
                     },
                     modifier = Modifier.weight(1f)
                 ) { Text("Prev") }
                 OutlinedButton(
                     enabled = session != null,
                     onClick = {
-                        val intent = Intent(context, PlaybackService::class.java).apply {
-                            action = PlaybackService.ACTION_TOGGLE_SHUFFLE
-                        }
-                        sendPlaybackIntent(context, intent)
+                        playback.toggleShuffle()
                     },
                     modifier = Modifier.weight(1f)
                 ) { Text(if (shuffleEnabled) "🔀 ON" else "🔀") }
                 OutlinedButton(
                     enabled = session != null,
                     onClick = {
-                        val intent = Intent(context, PlaybackService::class.java).apply {
-                            action = PlaybackService.ACTION_TOGGLE_PLAY_PAUSE
-                        }
-                        sendPlaybackIntent(context, intent)
+                        playback.togglePlayPause()
                     },
                     modifier = Modifier.weight(1f)
                 ) { Text(if (isPlaying) "Pause" else "Play") }
                 OutlinedButton(
                     enabled = session != null,
                     onClick = {
-                        val intent = Intent(context, PlaybackService::class.java).apply {
-                            action = PlaybackService.ACTION_CYCLE_REPEAT
-                        }
-                        sendPlaybackIntent(context, intent)
+                        playback.cycleRepeat()
                     },
                     modifier = Modifier.weight(1f)
                 ) {
@@ -2227,10 +2123,7 @@ private fun ExpandedNowPlayingScreen(
                 OutlinedButton(
                     enabled = session != null,
                     onClick = {
-                        val intent = Intent(context, PlaybackService::class.java).apply {
-                            action = PlaybackService.ACTION_SKIP_NEXT
-                        }
-                        sendPlaybackIntent(context, intent)
+                        playback.skipNext()
                     },
                     modifier = Modifier.weight(1f)
                 ) { Text("Next") }
@@ -2779,11 +2672,12 @@ private fun currentSyncedLyricLine(lines: List<com.deox9.musicplayer.lyrics.Sync
 
 @Composable
 private fun QueueSidebar(
-    queue: List<QueueItem>,
+    queue: List<QueueEntry>,
     currentIndex: Int,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val playback = LocalPlaybackConnection.current
     var reorderableQueue by remember { mutableStateOf(queue) }
     val rowHeightPx = with(LocalDensity.current) { 72.dp.toPx() }
     var draggedIndex by remember { mutableStateOf<Int?>(null) }
@@ -2801,12 +2695,7 @@ private fun QueueSidebar(
         if (fromIndex !in reorderableQueue.indices || toIndex !in reorderableQueue.indices || fromIndex == toIndex) {
             return
         }
-        val swapIntent = Intent(context, PlaybackService::class.java).apply {
-            action = PlaybackService.ACTION_SWAP_QUEUE_ITEMS
-            putExtra(PlaybackService.EXTRA_FROM_INDEX, fromIndex)
-            putExtra(PlaybackService.EXTRA_TO_INDEX, toIndex)
-        }
-        sendPlaybackIntent(context, swapIntent)
+        playback.swapQueueItems(fromIndex, toIndex)
         reorderableQueue = reorderableQueue.toMutableList().apply {
             val temp = this[fromIndex]
             this[fromIndex] = this[toIndex]
@@ -2910,11 +2799,7 @@ private fun QueueSidebar(
                                     )
                                 }
                                 .clickable {
-                                    val playNowIntent = Intent(context, PlaybackService::class.java).apply {
-                                        action = PlaybackService.ACTION_PLAY_QUEUE_INDEX
-                                        putExtra(PlaybackService.EXTRA_QUEUE_INDEX, index)
-                                    }
-                                    sendPlaybackIntent(context, playNowIntent)
+                                    playback.playQueueIndex(index)
                                 }
                                 .padding(vertical = 8.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -2934,11 +2819,7 @@ private fun QueueSidebar(
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 TextButton(
                                     onClick = {
-                                        val playNowIntent = Intent(context, PlaybackService::class.java).apply {
-                                            action = PlaybackService.ACTION_PLAY_QUEUE_INDEX
-                                            putExtra(PlaybackService.EXTRA_QUEUE_INDEX, index)
-                                        }
-                                        sendPlaybackIntent(context, playNowIntent)
+                                        playback.playQueueIndex(index)
                                     }
                                 ) {
                                     Text("Now")
@@ -2946,12 +2827,7 @@ private fun QueueSidebar(
                                 if (index > 0) {
                                     TextButton(
                                         onClick = {
-                                            val moveIntent = Intent(context, PlaybackService::class.java).apply {
-                                                action = PlaybackService.ACTION_MOVE_QUEUE_ITEM
-                                                putExtra(PlaybackService.EXTRA_FROM_INDEX, index)
-                                                putExtra(PlaybackService.EXTRA_TO_INDEX, 0)
-                                            }
-                                            sendPlaybackIntent(context, moveIntent)
+                                            playback.moveQueueItem(index, 0)
                                             reorderableQueue = reorderableQueue.toMutableList().apply {
                                                 val moved = removeAt(index)
                                                 add(0, moved)
@@ -2982,15 +2858,7 @@ private fun QueueSidebar(
                                 if (index < reorderableQueue.size - 1) {
                                     TextButton(
                                         onClick = {
-                                            val moveIntent = Intent(context, PlaybackService::class.java).apply {
-                                                action = PlaybackService.ACTION_MOVE_QUEUE_ITEM
-                                                putExtra(PlaybackService.EXTRA_FROM_INDEX, index)
-                                                putExtra(
-                                                    PlaybackService.EXTRA_TO_INDEX,
-                                                    reorderableQueue.lastIndex
-                                                )
-                                            }
-                                            sendPlaybackIntent(context, moveIntent)
+                                            playback.moveQueueItem(index, reorderableQueue.lastIndex)
                                             reorderableQueue = reorderableQueue.toMutableList().apply {
                                                 val moved = removeAt(index)
                                                 add(moved)
@@ -3002,11 +2870,7 @@ private fun QueueSidebar(
                                 }
                                 TextButton(
                                     onClick = {
-                                        val removeIntent = Intent(context, PlaybackService::class.java).apply {
-                                            action = PlaybackService.ACTION_REMOVE_QUEUE_INDEX
-                                            putExtra(PlaybackService.EXTRA_QUEUE_INDEX, index)
-                                        }
-                                        sendPlaybackIntent(context, removeIntent)
+                                        playback.removeQueueIndex(index)
                                         reorderableQueue = reorderableQueue.toMutableList().apply { removeAt(index) }
                                     }
                                 ) {
@@ -3022,10 +2886,7 @@ private fun QueueSidebar(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = {
-                        val clearIntent = Intent(context, PlaybackService::class.java).apply {
-                            action = PlaybackService.ACTION_CLEAR_QUEUE
-                        }
-                        sendPlaybackIntent(context, clearIntent)
+                        playback.clearQueue()
                         reorderableQueue = emptyList()
                     }
                 ) {
@@ -3044,6 +2905,7 @@ private fun LibraryScreen(
     listState: LazyListState
 ) {
     val context = LocalContext.current
+    val playback = LocalPlaybackConnection.current
     val favRepo = remember { FavouritesRepository(context) }
     val favourites by favRepo.observe().collectAsState(initial = emptySet())
     val scope = rememberCoroutineScope()
@@ -3138,31 +3000,13 @@ private fun LibraryScreen(
                     scope.launch { favRepo.toggle(track.contentUri) }
                 },
                 onClick = {
-                    val playIntent = Intent(context, PlaybackService::class.java).apply {
-                        action = PlaybackService.ACTION_PLAY_URI
-                        putExtra(PlaybackService.EXTRA_URI, track.contentUri)
-                        putExtra(PlaybackService.EXTRA_TITLE, track.title)
-                        putExtra(PlaybackService.EXTRA_ARTIST, track.artist)
-                    }
-                    sendPlaybackIntent(context, playIntent)
+                    playback.playNow(track.contentUri, track.title, track.artist)
                 },
                 onPlayNext = {
-                    val nextIntent = Intent(context, PlaybackService::class.java).apply {
-                        action = PlaybackService.ACTION_PLAY_NEXT
-                        putExtra(PlaybackService.EXTRA_URI, track.contentUri)
-                        putExtra(PlaybackService.EXTRA_TITLE, track.title)
-                        putExtra(PlaybackService.EXTRA_ARTIST, track.artist)
-                    }
-                    sendPlaybackIntent(context, nextIntent)
+                    playback.playNext(track.contentUri, track.title, track.artist)
                 },
                 onAddToQueue = {
-                    val queueIntent = Intent(context, PlaybackService::class.java).apply {
-                        action = PlaybackService.ACTION_ADD_TO_QUEUE
-                        putExtra(PlaybackService.EXTRA_URI, track.contentUri)
-                        putExtra(PlaybackService.EXTRA_TITLE, track.title)
-                        putExtra(PlaybackService.EXTRA_ARTIST, track.artist)
-                    }
-                    sendPlaybackIntent(context, queueIntent)
+                    playback.addToQueue(track.contentUri, track.title, track.artist)
                 }
             )
             HorizontalDivider()
@@ -3442,6 +3286,7 @@ private fun AlbumCard(album: Album, onClick: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 private fun AlbumDetailScreen(album: Album, onBack: () -> Unit) {
     val context = LocalContext.current
+    val playback = LocalPlaybackConnection.current
     val favRepo = remember { FavouritesRepository(context) }
     val favourites by favRepo.observe().collectAsState(initial = emptySet())
     val scope = rememberCoroutineScope()
@@ -3484,31 +3329,13 @@ private fun AlbumDetailScreen(album: Album, onBack: () -> Unit) {
                         scope.launch { favRepo.toggle(track.contentUri) }
                     },
                     onClick = {
-                        val intent = Intent(context, PlaybackService::class.java).apply {
-                            action = PlaybackService.ACTION_PLAY_URI
-                            putExtra(PlaybackService.EXTRA_URI, track.contentUri)
-                            putExtra(PlaybackService.EXTRA_TITLE, track.title)
-                            putExtra(PlaybackService.EXTRA_ARTIST, track.artist)
-                        }
-                        sendPlaybackIntent(context, intent)
+                        playback.playNow(track.contentUri, track.title, track.artist)
                     },
                     onPlayNext = {
-                        val intent = Intent(context, PlaybackService::class.java).apply {
-                            action = PlaybackService.ACTION_PLAY_NEXT
-                            putExtra(PlaybackService.EXTRA_URI, track.contentUri)
-                            putExtra(PlaybackService.EXTRA_TITLE, track.title)
-                            putExtra(PlaybackService.EXTRA_ARTIST, track.artist)
-                        }
-                        sendPlaybackIntent(context, intent)
+                        playback.playNext(track.contentUri, track.title, track.artist)
                     },
                     onAddToQueue = {
-                        val intent = Intent(context, PlaybackService::class.java).apply {
-                            action = PlaybackService.ACTION_ADD_TO_QUEUE
-                            putExtra(PlaybackService.EXTRA_URI, track.contentUri)
-                            putExtra(PlaybackService.EXTRA_TITLE, track.title)
-                            putExtra(PlaybackService.EXTRA_ARTIST, track.artist)
-                        }
-                        sendPlaybackIntent(context, intent)
+                        playback.addToQueue(track.contentUri, track.title, track.artist)
                     }
                 )
             }
@@ -3516,12 +3343,3 @@ private fun AlbumDetailScreen(album: Album, onBack: () -> Unit) {
     }
 }
 
-private fun sendPlaybackIntent(context: Context, intent: Intent) {
-    // startService throws IllegalStateException if the process is in the background
-    // on API 26+. This whole intent layer is interim: it is replaced by a bound
-    // MediaController, which is the supported way to drive a MediaSessionService.
-    runCatching { context.startService(intent) }
-        .onFailure { error ->
-            android.util.Log.w("Deo", "Playback intent ${intent.action} dropped", error)
-        }
-}

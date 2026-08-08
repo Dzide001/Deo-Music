@@ -143,14 +143,13 @@ class LocalMusicRepository(
                 val artist = cursor.getString(artistCol).orEmpty()
                 val count = cursor.getInt(countCol)
                 val artPath = cursor.getString(artCol)
+                // ALBUM_ART is null on modern Android, so the albumart provider path
+                // is the normal case rather than a fallback. It must not point at the
+                // album row URI — that is a database record, not an image.
                 val artworkUri = if (artPath.isNullOrBlank()) {
-                    // Fallback: construct from album ID
-                    ContentUris.withAppendedId(
-                        MediaStore.Audio.Albums.EXTERNAL_CONTENT_URI,
-                        id
-                    )
+                    AlbumArt.forAlbumId(id)
                 } else {
-                    android.net.Uri.parse(artPath)
+                    Uri.parse(artPath)
                 }
 
                 albums += Album(

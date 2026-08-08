@@ -2,8 +2,6 @@
 package com.deox9.musicplayer.player
 
 import android.content.ContentResolver
-import android.content.ContentUris
-import android.content.Intent
 import android.media.audiofx.Equalizer
 import android.net.Uri
 import android.provider.MediaStore
@@ -17,10 +15,13 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.deox9.musicplayer.library.AlbumArt
 import com.deox9.musicplayer.library.RecommendationSignalsRepository
 import com.deox9.musicplayer.player.storage.PlaybackSessionRepository
 import com.deox9.musicplayer.player.storage.QueueItem
 import com.deox9.musicplayer.settings.AppSettingsRepository
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -65,6 +66,9 @@ class PlaybackService : MediaSessionService() {
     private var equalizer: Equalizer? = null
     private var equalizerSessionId: Int = C.AUDIO_SESSION_ID_UNSET
 
+    /** The track being played before the current one, used to attribute skips. */
+    private var previousMediaId: String? = null
+
     override fun onCreate() {
         super.onCreate()
 
@@ -81,6 +85,22 @@ class PlaybackService : MediaSessionService() {
             .build()
 
         player.addListener(object : Player.Listener {
+            /**
+             * Records a skip when the user jumps tracks.
+             *
+             * Skip signals used to be recorded in the SKIP_NEXT/SKIP_PREV intent
+             * handlers. Those are gone — controllers issue Player commands directly —
+             * so the signal now comes from the transition reason. REASON_SEEK covers
+             * both next and previous; REASON_AUTO means the track simply finished,
+             * which is not a skip.
+             */
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) {
+                    recordSkip(previousMediaId)
+                }
+                previousMediaId = mediaItem?.mediaId
+            }
+
             override fun onEvents(player: Player, events: Player.Events) {
                 if (
                     events.contains(Player.EVENT_IS_PLAYING_CHANGED) ||
@@ -126,7 +146,10 @@ class PlaybackService : MediaSessionService() {
 
         mediaSession = MediaSession.Builder(this, player)
             .setId(SESSION_ID)
+            .setCallback(MediaItemResolver())
             .build()
+
+        restoreLastSession()
 
         settingsJob = mainScope.launch {
             appSettingsRepository.observe().collect { settings ->
@@ -161,253 +184,45 @@ class PlaybackService : MediaSessionService() {
         return mediaSession
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_PLAY_URI -> {
-                val uri = intent.getStringExtra(EXTRA_URI)
-                if (!uri.isNullOrBlank()) {
-                    playTrackNow(
-                        uri = uri,
-                        title = intent.getStringExtra(EXTRA_TITLE),
-                        artist = intent.getStringExtra(EXTRA_ARTIST)
-                    )
-                }
-            }
-
-            ACTION_ADD_TO_QUEUE -> {
-                val uri = intent.getStringExtra(EXTRA_URI)
-                if (!uri.isNullOrBlank()) {
-                    addTrackToQueue(
-                        uri = uri,
-                        title = intent.getStringExtra(EXTRA_TITLE),
-                        artist = intent.getStringExtra(EXTRA_ARTIST)
-                    )
-                }
-            }
-
-            ACTION_PLAY_NEXT -> {
-                val uri = intent.getStringExtra(EXTRA_URI)
-                if (!uri.isNullOrBlank()) {
-                    addTrackAsNext(
-                        uri = uri,
-                        title = intent.getStringExtra(EXTRA_TITLE),
-                        artist = intent.getStringExtra(EXTRA_ARTIST)
-                    )
-                }
-            }
-
-            ACTION_TOGGLE_PLAY_PAUSE -> {
-                val player = mediaSession?.player ?: return START_NOT_STICKY
-                if (player.isPlaying) player.pause() else player.play()
-                persistCurrentSession(player)
-            }
-
-            ACTION_SKIP_NEXT -> {
-                val player = mediaSession?.player ?: return START_NOT_STICKY
-                recordCurrentTrackSkip(player)
-                if (player.hasNextMediaItem()) {
-                    player.seekToNextMediaItem()
-                    player.playWhenReady = true
-                    persistCurrentSession(player)
-                }
-            }
-
-            ACTION_SKIP_PREV -> {
-                val player = mediaSession?.player ?: return START_NOT_STICKY
-                recordCurrentTrackSkip(player)
-                if (player.hasPreviousMediaItem()) {
-                    player.seekToPreviousMediaItem()
-                    player.playWhenReady = true
-                    persistCurrentSession(player)
+    /**
+     * Completes the sparse [MediaItem]s a controller sends.
+     *
+     * A controller can only pass metadata it already knows, and the artwork URI needs
+     * a MediaStore lookup. This is the documented hook for resolving incomplete items,
+     * and it keeps the query on the service side rather than doing content-resolver
+     * work on the UI thread.
+     */
+    private inner class MediaItemResolver : MediaSession.Callback {
+        override fun onAddMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: MutableList<MediaItem>,
+        ): ListenableFuture<MutableList<MediaItem>> {
+            val resolved = mediaItems.mapTo(mutableListOf()) { item ->
+                val artUri = queryAlbumArtUri(item.mediaId)
+                if (artUri.isBlank()) {
+                    item
                 } else {
-                    player.seekTo(0)
+                    item.buildUpon()
+                        .setMediaMetadata(
+                            item.mediaMetadata.buildUpon()
+                                .setArtworkUri(Uri.parse(artUri))
+                                .build(),
+                        )
+                        .build()
                 }
             }
-
-            ACTION_REMOVE_QUEUE_INDEX -> {
-                val index = intent.getIntExtra(EXTRA_QUEUE_INDEX, -1)
-                val player = mediaSession?.player ?: return START_NOT_STICKY
-                if (index in 0 until player.mediaItemCount) {
-                    player.removeMediaItem(index)
-                    if (player.mediaItemCount == 0) {
-                        player.stop()
-                    }
-                    persistCurrentSession(player)
-                }
-            }
-
-            ACTION_CLEAR_QUEUE -> {
-                val player = mediaSession?.player ?: return START_NOT_STICKY
-                player.clearMediaItems()
-                player.stop()
-                persistCurrentSession(player)
-            }
-
-            ACTION_RESTORE_LAST -> restoreLastSession()
-
-            ACTION_SEEK_TO -> {
-                val seekToMs = intent.getLongExtra(EXTRA_SEEK_TO_MS, -1L)
-                val player = mediaSession?.player ?: return START_NOT_STICKY
-                if (seekToMs >= 0) {
-                    player.seekTo(seekToMs)
-                    persistCurrentSession(player)
-                }
-            }
-
-            ACTION_SWAP_QUEUE_ITEMS -> {
-                val fromIndex = intent.getIntExtra(EXTRA_FROM_INDEX, -1)
-                val toIndex = intent.getIntExtra(EXTRA_TO_INDEX, -1)
-                val player = mediaSession?.player ?: return START_NOT_STICKY
-                if (fromIndex >= 0 && toIndex >= 0 &&
-                    fromIndex < player.mediaItemCount &&
-                    toIndex < player.mediaItemCount) {
-                    swapMediaItems(player, fromIndex, toIndex)
-                }
-            }
-
-            ACTION_MOVE_QUEUE_ITEM -> {
-                val fromIndex = intent.getIntExtra(EXTRA_FROM_INDEX, -1)
-                val toIndex = intent.getIntExtra(EXTRA_TO_INDEX, -1)
-                val player = mediaSession?.player ?: return START_NOT_STICKY
-                if (
-                    fromIndex >= 0 &&
-                    toIndex >= 0 &&
-                    fromIndex < player.mediaItemCount &&
-                    toIndex < player.mediaItemCount
-                ) {
-                    moveMediaItem(player, fromIndex, toIndex)
-                }
-            }
-
-            ACTION_PLAY_QUEUE_INDEX -> {
-                val index = intent.getIntExtra(EXTRA_QUEUE_INDEX, -1)
-                val player = mediaSession?.player ?: return START_NOT_STICKY
-                if (index in 0 until player.mediaItemCount) {
-                    player.seekToDefaultPosition(index)
-                    player.playWhenReady = true
-                    persistCurrentSession(player)
-                }
-            }
-
-            ACTION_TOGGLE_SHUFFLE -> {
-                val player = mediaSession?.player ?: return START_NOT_STICKY
-                player.shuffleModeEnabled = !player.shuffleModeEnabled
-            }
-
-            ACTION_CYCLE_REPEAT -> {
-                val player = mediaSession?.player ?: return START_NOT_STICKY
-                player.repeatMode = when (player.repeatMode) {
-                    Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE
-                    Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL
-                    else -> Player.REPEAT_MODE_OFF
-                }
-            }
-
-            ACTION_SET_PLAYER_VOLUME -> {
-                val volume = intent.getFloatExtra(EXTRA_PLAYER_VOLUME, 1f)
-                val player = mediaSession?.player ?: return START_NOT_STICKY
-                player.volume = volume.coerceIn(0f, 1f)
-            }
+            return Futures.immediateFuture(resolved)
         }
-        return super.onStartCommand(intent, flags, startId)
     }
 
-    private fun playTrackNow(
-        uri: String,
-        title: String?,
-        artist: String?
-    ) {
-        val session = mediaSession ?: return
-        val player = session.player
-
-        val item = buildMediaItem(uri = uri, title = title, artist = artist)
-
-        player.setMediaItem(item)
-        player.prepare()
-        player.playWhenReady = true
-        persistCurrentSession(player)
-    }
-
-    private fun addTrackToQueue(
-        uri: String,
-        title: String?,
-        artist: String?
-    ) {
-        val session = mediaSession ?: return
-        val player = session.player
-
-        val item = buildMediaItem(uri = uri, title = title, artist = artist)
-
-        if (player.mediaItemCount == 0) {
-            player.setMediaItem(item)
-            player.prepare()
-        } else {
-            player.addMediaItem(item)
-        }
-
-        persistCurrentSession(player)
-    }
-
-    private fun addTrackAsNext(
-        uri: String,
-        title: String?,
-        artist: String?
-    ) {
-        val session = mediaSession ?: return
-        val player = session.player
-        val item = buildMediaItem(uri = uri, title = title, artist = artist)
-
-        if (player.mediaItemCount == 0) {
-            player.setMediaItem(item)
-            player.prepare()
-            player.playWhenReady = true
-            persistCurrentSession(player)
-            return
-        }
-
-        val currentIndex = player.currentMediaItemIndex
-        val insertIndex = if (currentIndex in 0 until player.mediaItemCount) {
-            (currentIndex + 1).coerceAtMost(player.mediaItemCount)
-        } else {
-            player.mediaItemCount
-        }
-        player.addMediaItem(insertIndex, item)
-        persistCurrentSession(player)
-    }
-
-    private fun buildMediaItem(
-        uri: String,
-        title: String?,
-        artist: String?
-    ): MediaItem {
-        val metadata = MediaMetadata.Builder()
-            .setTitle(title ?: "Unknown title")
-            .setArtist(artist ?: "Unknown artist")
-            .build()
-
-        return MediaItem.Builder()
-            .setUri(Uri.parse(uri))
-            .setMediaId(uri)
-            .setMediaMetadata(metadata)
-            .build()
-    }
-
-    private fun swapMediaItems(player: Player, fromIndex: Int, toIndex: Int) {
-        if (fromIndex == toIndex) return
-
-        QueueSwap.movesFor(fromIndex, toIndex).forEach { (from, to) ->
-            player.moveMediaItem(from, to)
-        }
-
-        persistCurrentSession(player)
-    }
-
-    private fun moveMediaItem(player: Player, fromIndex: Int, toIndex: Int) {
-        if (fromIndex == toIndex) return
-        player.moveMediaItem(fromIndex, toIndex)
-        persistCurrentSession(player)
-    }
-
+    /**
+     * Rebuilds the previous session on service start.
+     *
+     * Restores the whole queue, not just the current track. The queue was already
+     * being persisted, but only the one item was ever restored, so the rest of the
+     * user's queue was silently dropped on every restart.
+     */
     private fun restoreLastSession() {
         mainScope.launch {
             val player = mediaSession?.player ?: return@launch
@@ -415,22 +230,34 @@ class PlaybackService : MediaSessionService() {
                 playbackSessionRepository.getLatest()
             } ?: return@launch
 
-            val item = MediaItem.Builder()
-                .setUri(Uri.parse(last.uri))
-                .setMediaId(last.uri)
-                .setMediaMetadata(
-                    MediaMetadata.Builder()
-                        .setTitle(last.title)
-                        .setArtist(last.artist)
-                        .build()
-                )
-                .build()
+            val items = last.queue
+                .filter { it.uri.isNotBlank() }
+                .map { entry -> restoredMediaItem(entry.uri, entry.title, entry.artist) }
+                .ifEmpty { listOf(restoredMediaItem(last.uri, last.title, last.artist)) }
 
-            player.setMediaItem(item)
+            val startIndex = last.currentIndex.coerceIn(0, items.lastIndex)
+
+            player.setMediaItems(items, startIndex, last.positionMs)
+            player.shuffleModeEnabled = last.shuffleEnabled
+            player.repeatMode = last.repeatMode
             player.prepare()
-            player.seekTo(last.positionMs)
             player.playWhenReady = last.isPlaying
         }
+    }
+
+    private fun restoredMediaItem(uri: String, title: String, artist: String): MediaItem {
+        val artUri = queryAlbumArtUri(uri)
+        return MediaItem.Builder()
+            .setUri(Uri.parse(uri))
+            .setMediaId(uri)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(title)
+                    .setArtist(artist)
+                    .apply { if (artUri.isNotBlank()) setArtworkUri(Uri.parse(artUri)) }
+                    .build()
+            )
+            .build()
     }
 
     private fun persistCurrentSession(player: Player) {
@@ -500,10 +327,7 @@ class PlaybackService : MediaSessionService() {
                 null
             )?.use { cursor ->
                 if (cursor.moveToFirst()) {
-                    ContentUris.withAppendedId(
-                        MediaStore.Audio.Albums.EXTERNAL_CONTENT_URI,
-                        cursor.getLong(0)
-                    ).toString()
+                    AlbumArt.forAlbumId(cursor.getLong(0)).toString()
                 } else {
                     ""
                 }
@@ -681,12 +505,11 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    private fun recordCurrentTrackSkip(player: Player) {
-        val current = player.currentMediaItem ?: return
-        val uri = current.localConfiguration?.uri?.toString().orEmpty()
-        if (uri.isBlank()) return
+    /** Records that [mediaId] — the track being left — was skipped rather than finished. */
+    private fun recordSkip(mediaId: String?) {
+        if (mediaId.isNullOrBlank()) return
         ioScope.launch {
-            recommendationSignalsRepository.recordSkip(uri)
+            recommendationSignalsRepository.recordSkip(mediaId)
         }
     }
 
@@ -708,30 +531,6 @@ class PlaybackService : MediaSessionService() {
 
     companion object {
         const val SESSION_ID = "music-player-session"
-        const val ACTION_PLAY_URI = "com.deox9.musicplayer.action.PLAY_URI"
-        const val EXTRA_URI = "extra_uri"
-        const val EXTRA_TITLE = "extra_title"
-        const val EXTRA_ARTIST = "extra_artist"
-        const val ACTION_TOGGLE_PLAY_PAUSE = "com.deox9.musicplayer.action.TOGGLE_PLAY_PAUSE"
-        const val ACTION_RESTORE_LAST = "com.deox9.musicplayer.action.RESTORE_LAST"
-        const val ACTION_SEEK_TO = "com.deox9.musicplayer.action.SEEK_TO"
-        const val ACTION_ADD_TO_QUEUE = "com.deox9.musicplayer.action.ADD_TO_QUEUE"
-        const val ACTION_PLAY_NEXT = "com.deox9.musicplayer.action.PLAY_NEXT"
-        const val ACTION_SKIP_NEXT = "com.deox9.musicplayer.action.SKIP_NEXT"
-        const val ACTION_SKIP_PREV = "com.deox9.musicplayer.action.SKIP_PREV"
-        const val ACTION_REMOVE_QUEUE_INDEX = "com.deox9.musicplayer.action.REMOVE_QUEUE_INDEX"
-        const val ACTION_CLEAR_QUEUE = "com.deox9.musicplayer.action.CLEAR_QUEUE"
-        const val ACTION_SWAP_QUEUE_ITEMS = "com.deox9.musicplayer.action.SWAP_QUEUE_ITEMS"
-        const val ACTION_MOVE_QUEUE_ITEM = "com.deox9.musicplayer.action.MOVE_QUEUE_ITEM"
-        const val ACTION_PLAY_QUEUE_INDEX = "com.deox9.musicplayer.action.PLAY_QUEUE_INDEX"
-        const val EXTRA_SEEK_TO_MS = "extra_seek_to_ms"
-        const val EXTRA_QUEUE_INDEX = "extra_queue_index"
-        const val EXTRA_FROM_INDEX = "extra_from_index"
-        const val EXTRA_TO_INDEX = "extra_to_index"
-        const val ACTION_TOGGLE_SHUFFLE = "com.deox9.musicplayer.action.TOGGLE_SHUFFLE"
-        const val ACTION_CYCLE_REPEAT = "com.deox9.musicplayer.action.CYCLE_REPEAT"
-        const val ACTION_SET_PLAYER_VOLUME = "com.deox9.musicplayer.action.SET_PLAYER_VOLUME"
-        const val EXTRA_PLAYER_VOLUME = "extra_player_volume"
 
         private const val CROSSFADE_CHECK_INTERVAL_MS = 250L
         private const val CROSSFADE_WINDOW_MS = 1200L
