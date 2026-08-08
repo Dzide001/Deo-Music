@@ -1,19 +1,25 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 package com.deox9.musicplayer.player
 
+import android.content.ContentResolver
+import android.content.ContentUris
 import android.content.Intent
 import android.media.audiofx.Equalizer
 import android.net.Uri
+import android.provider.MediaStore
+import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
-import androidx.media3.common.C
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import com.deox9.musicplayer.player.storage.QueueItem
-import com.deox9.musicplayer.player.storage.PlaybackSessionRepository
 import com.deox9.musicplayer.library.RecommendationSignalsRepository
+import com.deox9.musicplayer.player.storage.PlaybackSessionRepository
+import com.deox9.musicplayer.player.storage.QueueItem
 import com.deox9.musicplayer.settings.AppSettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,12 +27,22 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.collect
 import kotlin.math.pow
 
+/**
+ * Opts in to the Media3 APIs used here that are still marked unstable: the audio
+ * session id feeding the platform Equalizer, and C.AUDIO_SESSION_ID_UNSET.
+ *
+ * Uses androidx.annotation.OptIn rather than Kotlin's — Android Lint's
+ * UnsafeOptInUsageError check only recognises the AndroidX form. Unlike
+ * annotating the class @UnstableApi, this does not mark PlaybackService unstable
+ * for its callers. Worth re-checking on each Media3 version bump.
+ */
+@OptIn(markerClass = [UnstableApi::class])
 class PlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -125,7 +141,11 @@ class PlaybackService : MediaSessionService() {
                 eqEnabled = settings.eqEnabled
                 eqBandLevels = settings.eqBandLevels
 
-                player.setPauseAtEndOfMediaItems(!settings.gaplessEnabled)
+                // ExoPlayer advances between items gaplessly by default. The previous
+                // wiring called setPauseAtEndOfMediaItems(!gaplessEnabled), which does
+                // not disable gapless — it halts playback at the end of every track.
+                // Real gapless (LAME/Xing and iTunSMPB encoder delay/padding trimming)
+                // is Phase 5 work; until then this setting must not touch the player.
                 if (!settings.crossfadeEnabled) {
                     stopCrossfadeMonitor(player)
                     transitionVolumeMultiplier = 1f
@@ -238,8 +258,8 @@ class PlaybackService : MediaSessionService() {
                 val fromIndex = intent.getIntExtra(EXTRA_FROM_INDEX, -1)
                 val toIndex = intent.getIntExtra(EXTRA_TO_INDEX, -1)
                 val player = mediaSession?.player ?: return START_NOT_STICKY
-                if (fromIndex >= 0 && toIndex >= 0 && 
-                    fromIndex < player.mediaItemCount && 
+                if (fromIndex >= 0 && toIndex >= 0 &&
+                    fromIndex < player.mediaItemCount &&
                     toIndex < player.mediaItemCount) {
                     swapMediaItems(player, fromIndex, toIndex)
                 }
@@ -374,19 +394,11 @@ class PlaybackService : MediaSessionService() {
 
     private fun swapMediaItems(player: Player, fromIndex: Int, toIndex: Int) {
         if (fromIndex == toIndex) return
-        
-        // Get both items
-        val fromItem = player.getMediaItemAt(fromIndex)
-        val toItem = player.getMediaItemAt(toIndex)
-        
-        // Remove from source
-        player.removeMediaItem(fromIndex)
-        
-        // Insert at destination
-        val insertIndex = if (toIndex > fromIndex) toIndex - 1 else toIndex
-        player.addMediaItem(insertIndex, toItem)
-        player.addMediaItem(fromIndex, fromItem)
-        
+
+        QueueSwap.movesFor(fromIndex, toIndex).forEach { (from, to) ->
+            player.moveMediaItem(from, to)
+        }
+
         persistCurrentSession(player)
     }
 
@@ -468,32 +480,35 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
+    /**
+     * Resolves the album-art URI for a track.
+     *
+     * The track URI is a `content://media/external/audio/media/<id>` URI, so it is
+     * queried directly for its ALBUM_ID rather than matched against the DATA column
+     * (DATA holds a filesystem path and never equals a content URI).
+     */
     private fun queryAlbumArtUri(trackUri: String): String {
-        return try {
-            val cursor = contentResolver.query(
-                android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                arrayOf(
-                    android.provider.MediaStore.Audio.Media.ALBUM_ID,
-                    android.provider.MediaStore.Audio.Media.ALBUM
-                ),
-                "${android.provider.MediaStore.Audio.Media.DATA} = ?",
-                arrayOf(trackUri),
+        val uri = runCatching { Uri.parse(trackUri) }.getOrNull() ?: return ""
+        if (uri.scheme != ContentResolver.SCHEME_CONTENT) return ""
+
+        return runCatching {
+            contentResolver.query(
+                uri,
+                arrayOf(MediaStore.Audio.Media.ALBUM_ID),
+                null,
+                null,
                 null
-            )
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    val albumId = it.getLong(0)
-                    android.content.ContentUris.withAppendedId(
-                        android.provider.MediaStore.Audio.Albums.EXTERNAL_CONTENT_URI,
-                        albumId
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    ContentUris.withAppendedId(
+                        MediaStore.Audio.Albums.EXTERNAL_CONTENT_URI,
+                        cursor.getLong(0)
                     ).toString()
                 } else {
                     ""
                 }
-            } ?: ""
-        } catch (_: Exception) {
-            ""
-        }
+            }.orEmpty()
+        }.getOrDefault("")
     }
 
     private fun startPositionPersistence(player: Player) {

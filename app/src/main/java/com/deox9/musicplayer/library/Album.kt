@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 package com.deox9.musicplayer.library
 
 import android.net.Uri

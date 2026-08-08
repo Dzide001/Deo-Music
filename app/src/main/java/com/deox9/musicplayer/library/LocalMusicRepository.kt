@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 package com.deox9.musicplayer.library
 
 import android.content.ContentUris
@@ -14,6 +15,9 @@ class LocalMusicRepository(
     companion object {
         private const val CACHE_TTL_MS = 20_000L
 
+        /** Upper bound on tracks read in a single library pass. */
+        const val TRACK_SCAN_LIMIT = 5000
+
         private data class CacheEntry<T>(
             val key: String,
             val cachedAtMs: Long,
@@ -23,11 +27,13 @@ class LocalMusicRepository(
         private val cacheLock = Any()
         private var tracksCache: CacheEntry<List<LocalTrack>>? = null
         private var albumsCache: CacheEntry<List<Album>>? = null
+        private var folderPathsCache: CacheEntry<Map<Long, String>>? = null
 
         fun invalidateCaches() {
             synchronized(cacheLock) {
                 tracksCache = null
                 albumsCache = null
+                folderPathsCache = null
             }
         }
     }
@@ -240,7 +246,7 @@ class LocalMusicRepository(
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idCol)
                 val name = cursor.getString(nameCol).orEmpty().ifBlank { "Untitled playlist" }
-                val count = getTracksByPlaylist(id).size
+                val count = countMembers(MediaStore.Audio.Playlists.Members.getContentUri("external", id))
                 playlists += PlaylistInfo(
                     id = id,
                     name = name,
@@ -319,7 +325,7 @@ class LocalMusicRepository(
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idCol)
                 val name = cursor.getString(nameCol).orEmpty().ifBlank { "Unknown genre" }
-                val count = getTracksByGenre(id).size
+                val count = countMembers(MediaStore.Audio.Genres.Members.getContentUri("external", id))
                 genres += GenreInfo(
                     id = id,
                     name = name,
@@ -378,12 +384,11 @@ class LocalMusicRepository(
     }
 
     fun getFolders(): List<FolderInfo> {
-        val tracks = getTracks(limit = 5000)
-        val grouped = tracks.groupBy { track ->
-            extractFolder(track.contentUri)
-        }
+        val foldersByTrackId = queryFolderPathsByTrackId()
 
-        return grouped.entries
+        return getTracks(limit = TRACK_SCAN_LIMIT)
+            .groupBy { foldersByTrackId[it.id].orEmpty() }
+            .entries
             .filter { it.key.isNotBlank() }
             .map { (path, items) ->
                 FolderInfo(
@@ -396,8 +401,10 @@ class LocalMusicRepository(
     }
 
     fun getTracksByFolder(folderPath: String): List<LocalTrack> {
-        return getTracks(limit = 5000)
-            .filter { extractFolder(it.contentUri) == folderPath }
+        val foldersByTrackId = queryFolderPathsByTrackId()
+
+        return getTracks(limit = TRACK_SCAN_LIMIT)
+            .filter { foldersByTrackId[it.id] == folderPath }
             .sortedBy { it.title.lowercase() }
     }
 
@@ -438,6 +445,24 @@ class LocalMusicRepository(
         }.getOrDefault(false)
     }
 
+    /**
+     * Counts rows in a members collection without hydrating each track.
+     *
+     * Playlist and genre listings previously called `getTracksBy…(id).size`, which ran a
+     * full-projection query and allocated a [LocalTrack] per row just to read the count.
+     */
+    private fun countMembers(membersUri: Uri): Int {
+        return runCatching {
+            context.contentResolver.query(
+                membersUri,
+                arrayOf(MediaStore.Audio.Media._ID),
+                null,
+                null,
+                null
+            )?.use { it.count } ?: 0
+        }.getOrDefault(0)
+    }
+
     private fun nextPlaylistPlayOrder(playlistId: Long): Int {
         val membersUri = MediaStore.Audio.Playlists.Members.getContentUri("external", playlistId)
         context.contentResolver.query(
@@ -455,27 +480,56 @@ class LocalMusicRepository(
         return 0
     }
 
-    private fun extractFolder(contentUri: String): String {
-        val id = contentUri.substringAfterLast('/').toLongOrNull() ?: return ""
-        val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+    /**
+     * Reads every track's folder path in a single cursor pass, keyed by track id.
+     *
+     * This replaces a per-track query: the previous implementation issued one
+     * ContentResolver round trip for each of up to [TRACK_SCAN_LIMIT] tracks.
+     */
+    private fun queryFolderPathsByTrackId(): Map<Long, String> {
+        synchronized(cacheLock) {
+            val cached = folderPathsCache
+            if (cached != null && (System.currentTimeMillis() - cached.cachedAtMs) <= CACHE_TTL_MS) {
+                return cached.value
+            }
+        }
+
         val relativePathColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             MediaStore.Audio.Media.RELATIVE_PATH
         } else {
             MediaStore.Audio.Media.DATA
         }
 
+        val paths = mutableMapOf<Long, String>()
         context.contentResolver.query(
-            collection,
-            arrayOf(relativePathColumn),
-            "${MediaStore.Audio.Media._ID} = ?",
-            arrayOf(id.toString()),
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+            arrayOf(MediaStore.Audio.Media._ID, relativePathColumn),
+            "${MediaStore.Audio.Media.IS_MUSIC} != 0",
+            null,
             null
         )?.use { cursor ->
+            val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
             val pathCol = cursor.getColumnIndexOrThrow(relativePathColumn)
-            if (cursor.moveToFirst()) {
-                return cursor.getString(pathCol).orEmpty().trimEnd('/')
+            while (cursor.moveToNext()) {
+                val raw = cursor.getString(pathCol).orEmpty()
+                // DATA is a full file path on pre-Q; RELATIVE_PATH is already a directory.
+                val folder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    raw.trimEnd('/')
+                } else {
+                    raw.substringBeforeLast('/', missingDelimiterValue = "")
+                }
+                paths[cursor.getLong(idCol)] = folder
             }
         }
-        return ""
+
+        val result = paths.toMap()
+        synchronized(cacheLock) {
+            folderPathsCache = CacheEntry(
+                key = "folder_paths",
+                cachedAtMs = System.currentTimeMillis(),
+                value = result
+            )
+        }
+        return result
     }
 }
