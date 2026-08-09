@@ -728,8 +728,11 @@ fun LibraryScreen(
     // The launch-time scan runs before the permission dialog is answered, so a fresh
     // install would otherwise show an empty library until something else triggered a
     // rescan.
-    LaunchedEffect(hasPermission) {
-        if (hasPermission) LibraryScanWorker.enqueue(context)
+    val librarySettings by viewModel.settings.collectAsState()
+    LaunchedEffect(hasPermission, librarySettings.thoroughScanEnabled) {
+        if (hasPermission) {
+            LibraryScanWorker.enqueue(context, thorough = librarySettings.thoroughScanEnabled)
+        }
     }
 
     if (!hasPermission) {

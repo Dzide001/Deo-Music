@@ -41,6 +41,8 @@ class SettingsViewModel @Inject constructor(
 
     fun setSuggestionsEnabled(enabled: Boolean) = edit { repository.setSuggestionsEnabled(enabled) }
 
+    fun setThoroughScanEnabled(enabled: Boolean) = edit { repository.setThoroughScanEnabled(enabled) }
+
     fun setEqEnabled(enabled: Boolean) = edit { repository.setEqEnabled(enabled) }
 
     fun setReplayGainEnabled(enabled: Boolean) = edit { repository.setReplayGainEnabled(enabled) }

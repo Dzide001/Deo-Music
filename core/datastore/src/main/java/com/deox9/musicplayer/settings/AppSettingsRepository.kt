@@ -25,7 +25,14 @@ data class AppSettings(
     val eqEnabled: Boolean = false,
     val replayGainEnabled: Boolean = false,
     val replayGainDb: Float = 0f,
-    val eqBandLevels: List<Int> = List(10) { 0 }
+    val eqBandLevels: List<Int> = List(10) { 0 },
+    /**
+     * Whether the library scan opens every file to read its tags.
+     *
+     * Off by default: it is the only way to get ReplayGain and reliable album
+     * artist, but it is far slower than reading MediaStore.
+     */
+    val thoroughScanEnabled: Boolean = false
 )
 
 class AppSettingsRepository(private val context: Context) {
@@ -41,7 +48,8 @@ class AppSettingsRepository(private val context: Context) {
                 eqEnabled = prefs[Keys.EQ_ENABLED] ?: false,
                 replayGainEnabled = prefs[Keys.REPLAY_GAIN_ENABLED] ?: false,
                 replayGainDb = prefs[Keys.REPLAY_GAIN_DB] ?: 0f,
-                eqBandLevels = decodeEqBands(prefs[Keys.EQ_BAND_LEVELS_JSON] ?: "[]")
+                eqBandLevels = decodeEqBands(prefs[Keys.EQ_BAND_LEVELS_JSON] ?: "[]"),
+                thoroughScanEnabled = prefs[Keys.THOROUGH_SCAN_ENABLED] ?: false
             )
         }
     }
@@ -100,6 +108,12 @@ class AppSettingsRepository(private val context: Context) {
         }
     }
 
+    suspend fun setThoroughScanEnabled(enabled: Boolean) {
+        context.appSettingsDataStore.edit { prefs ->
+            prefs[Keys.THOROUGH_SCAN_ENABLED] = enabled
+        }
+    }
+
     suspend fun resetDefaults() {
         context.appSettingsDataStore.edit { prefs ->
             prefs[Keys.WEB_HOME_URL] = DEFAULT_WEB_HOME
@@ -111,6 +125,7 @@ class AppSettingsRepository(private val context: Context) {
             prefs[Keys.REPLAY_GAIN_ENABLED] = false
             prefs[Keys.REPLAY_GAIN_DB] = 0f
             prefs[Keys.EQ_BAND_LEVELS_JSON] = encodeEqBands(List(10) { 0 })
+            prefs[Keys.THOROUGH_SCAN_ENABLED] = false
         }
     }
 
@@ -146,6 +161,7 @@ class AppSettingsRepository(private val context: Context) {
         val REPLAY_GAIN_ENABLED = booleanPreferencesKey("replay_gain_enabled")
         val REPLAY_GAIN_DB = floatPreferencesKey("replay_gain_db")
         val EQ_BAND_LEVELS_JSON = stringPreferencesKey("eq_band_levels_json")
+        val THOROUGH_SCAN_ENABLED = booleanPreferencesKey("thorough_scan_enabled")
     }
 
     companion object {

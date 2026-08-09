@@ -14,6 +14,9 @@ dependencies {
     implementation(libs.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
 
+    // LGPLv3, which the GPLv3 licensing decision is what makes usable here.
+    implementation(libs.ealvatag)
+
     implementation(libs.work.runtime.ktx)
     implementation(libs.hilt.work)
     ksp(libs.hilt.compiler.androidx)

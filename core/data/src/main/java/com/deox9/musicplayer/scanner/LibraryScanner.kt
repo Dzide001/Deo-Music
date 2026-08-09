@@ -21,6 +21,7 @@ import javax.inject.Singleton
 @Singleton
 class LibraryScanner @Inject constructor(
     private val mediaStoreSource: MediaStoreSource,
+    private val thoroughTagPass: ThoroughTagPass,
     private val indexer: LibraryIndexer,
     private val dao: LibraryDao,
 ) {
@@ -28,6 +29,9 @@ class LibraryScanner @Inject constructor(
     sealed interface State {
         data object Idle : State
         data object Scanning : State
+
+        /** Reading tags out of files, which is slow enough to be worth reporting. */
+        data class ReadingTags(val done: Int, val total: Int) : State
         data class Complete(val trackCount: Int, val durationMs: Long) : State
         data class Failed(val message: String) : State
     }
@@ -43,15 +47,26 @@ class LibraryScanner @Inject constructor(
      * Tracks that MediaStore no longer lists are removed, so deletions made outside
      * the app do not leave dead rows behind.
      */
-    suspend fun scan(minimumDurationMs: Long = 0L): State = mutex.withLock {
+    suspend fun scan(minimumDurationMs: Long = 0L, thorough: Boolean = false): State = mutex.withLock {
         _state.value = State.Scanning
         val startedAt = System.currentTimeMillis()
 
         val result = runCatching {
             withContext(Dispatchers.IO) {
                 val scanned = mediaStoreSource.readTracks(minimumDurationMs)
-                indexer.index(scanned)
-                pruneMissing(scanned)
+
+                // The thorough pass opens every file, so it is opt-in and runs after
+                // the fast pass has already produced a usable library.
+                val enriched = if (thorough) {
+                    thoroughTagPass.enrich(scanned) { done, total ->
+                        _state.value = State.ReadingTags(done, total)
+                    }
+                } else {
+                    scanned
+                }
+
+                indexer.index(enriched)
+                pruneMissing(enriched)
                 dao.trackCount()
             }
         }

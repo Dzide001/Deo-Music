@@ -26,8 +26,9 @@ class LibraryScanWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         val minimumDurationMs = inputData.getLong(KEY_MINIMUM_DURATION_MS, 0L)
+        val thorough = inputData.getBoolean(KEY_THOROUGH, false)
 
-        return when (scanner.scan(minimumDurationMs)) {
+        return when (scanner.scan(minimumDurationMs, thorough)) {
             is LibraryScanner.State.Complete -> Result.success()
             // Retry rather than fail: a scan interrupted by the media store being
             // busy or storage being unmounted is worth another attempt.
@@ -39,6 +40,7 @@ class LibraryScanWorker @AssistedInject constructor(
     companion object {
         const val WORK_NAME = "library-scan"
         const val KEY_MINIMUM_DURATION_MS = "minimum_duration_ms"
+        const val KEY_THOROUGH = "thorough"
 
         /**
          * Enqueues a scan, keeping any already running.
@@ -46,11 +48,12 @@ class LibraryScanWorker @AssistedInject constructor(
          * KEEP rather than REPLACE so a burst of MediaStore change notifications
          * during a large file copy does not restart the scan repeatedly.
          */
-        fun enqueue(context: Context, minimumDurationMs: Long = 0L) {
+        fun enqueue(context: Context, minimumDurationMs: Long = 0L, thorough: Boolean = false) {
             val request = OneTimeWorkRequestBuilder<LibraryScanWorker>()
                 .setInputData(
                     androidx.work.Data.Builder()
                         .putLong(KEY_MINIMUM_DURATION_MS, minimumDurationMs)
+                        .putBoolean(KEY_THOROUGH, thorough)
                         .build(),
                 )
                 .build()

@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.deox9.musicplayer.settings.AppSettings
 import com.deox9.musicplayer.ui.isDebugBuild
 import com.deox9.musicplayer.ui.label
 import com.deox9.musicplayer.web.normalizeWebUrl
@@ -113,28 +114,7 @@ fun SettingsSheet(
                 }
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "Library and appearance",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            SettingToggleRow(
-                title = "Enable suggestions tab content",
-                checked = settings.suggestionsEnabled,
-                onCheckedChange = { enabled ->
-                    viewModel.setSuggestionsEnabled(enabled)
-                }
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            SettingToggleRow(
-                title = "Prefer dark theme (saved)",
-                checked = settings.darkThemeEnabled,
-                onCheckedChange = { enabled ->
-                    viewModel.setDarkThemeEnabled(enabled)
-                }
-            )
+            LibraryAndAppearanceSection(settings = settings, viewModel = viewModel)
 
             if (isDebugBuild(context)) {
                 Spacer(modifier = Modifier.height(8.dp))
@@ -183,4 +163,35 @@ private fun SettingToggleRow(
             onCheckedChange = onCheckedChange
         )
     }
+}
+
+@Composable
+private fun LibraryAndAppearanceSection(
+    settings: AppSettings,
+    viewModel: SettingsViewModel,
+) {
+    Spacer(modifier = Modifier.height(16.dp))
+    Text(
+        text = "Library and appearance",
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold
+    )
+    Spacer(modifier = Modifier.height(8.dp))
+    SettingToggleRow(
+        title = "Thorough scan (reads tags from files)",
+        checked = settings.thoroughScanEnabled,
+        onCheckedChange = viewModel::setThoroughScanEnabled
+    )
+    Spacer(modifier = Modifier.height(8.dp))
+    SettingToggleRow(
+        title = "Enable suggestions tab content",
+        checked = settings.suggestionsEnabled,
+        onCheckedChange = viewModel::setSuggestionsEnabled
+    )
+    Spacer(modifier = Modifier.height(8.dp))
+    SettingToggleRow(
+        title = "Prefer dark theme (saved)",
+        checked = settings.darkThemeEnabled,
+        onCheckedChange = viewModel::setDarkThemeEnabled
+    )
 }

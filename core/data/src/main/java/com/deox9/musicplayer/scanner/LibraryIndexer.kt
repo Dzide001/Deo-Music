@@ -116,7 +116,9 @@ class LibraryIndexer @Inject constructor(
         val resolvedTitle = title.ifBlank { ScannedTrack.UNKNOWN_TITLE }
         return TrackEntity(
             title = resolvedTitle,
-            sortTitle = SortKeys.forTitle(resolvedTitle),
+            // An explicit sort tag beats a derived key when the file carries one.
+            sortTitle = titleSort?.takeIf(String::isNotBlank)?.lowercase()
+                ?: SortKeys.forTitle(resolvedTitle),
             mediaUri = mediaUri,
             filePath = filePath,
             sourceId = sourceId,
@@ -132,6 +134,15 @@ class LibraryIndexer @Inject constructor(
             mimeType = mimeType,
             sizeBytes = sizeBytes,
             bitrateKbps = bitrateKbps,
+            composer = composer,
+            grouping = grouping,
+            comment = comment,
+            bpm = bpm,
+            musicalKey = musicalKey,
+            replayGainTrackDb = replayGainTrackDb,
+            replayGainTrackPeak = replayGainTrackPeak,
+            replayGainAlbumDb = replayGainAlbumDb,
+            replayGainAlbumPeak = replayGainAlbumPeak,
             dateAddedMs = dateAddedMs,
             dateModifiedMs = dateModifiedMs,
         )

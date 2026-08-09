@@ -30,6 +30,18 @@ data class ScannedTrack(
     val dateAddedMs: Long,
     val dateModifiedMs: Long,
     val isCompilation: Boolean,
+
+    // Filled by the thorough pass; MediaStore never exposes these.
+    val composer: String? = null,
+    val grouping: String? = null,
+    val comment: String? = null,
+    val bpm: Int? = null,
+    val musicalKey: String? = null,
+    val titleSort: String? = null,
+    val replayGainTrackDb: Float? = null,
+    val replayGainTrackPeak: Float? = null,
+    val replayGainAlbumDb: Float? = null,
+    val replayGainAlbumPeak: Float? = null,
 ) {
     /**
      * The artist an album should be filed under.
