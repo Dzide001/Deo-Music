@@ -13,6 +13,8 @@ import com.deox9.musicplayer.database.entity.FavouriteEntity
 import com.deox9.musicplayer.database.entity.FolderEntity
 import com.deox9.musicplayer.database.entity.GenreEntity
 import com.deox9.musicplayer.database.entity.PlayHistoryEntity
+import com.deox9.musicplayer.database.entity.PlaylistEntity
+import com.deox9.musicplayer.database.entity.PlaylistEntryEntity
 import com.deox9.musicplayer.database.entity.TrackEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -318,4 +320,102 @@ interface LibraryDao {
 
     @Query("DELETE FROM favourites WHERE trackId = :trackId")
     suspend fun removeFavourite(trackId: Long)
+
+    // ---- Playlists -------------------------------------------------------------
+
+    @Query(
+        """
+        SELECT p.id, p.name, COUNT(pe.id) AS trackCount
+        FROM playlists p
+        LEFT JOIN playlist_entries pe ON pe.playlistId = p.id
+        GROUP BY p.id
+        ORDER BY p.name COLLATE NOCASE ASC
+        """,
+    )
+    fun observePlaylistsWithCounts(): Flow<List<NamedCount>>
+
+    @Query(
+        """
+        SELECT t.id, t.title, t.mediaUri, t.durationMs,
+               ar.name AS artistName, al.title AS albumTitle, t.albumId,
+               t.trackNumber, t.discNumber, f.path AS folderPath, g.name AS genreName,
+               t.dateAddedMs
+        FROM playlist_entries pe
+        JOIN tracks t ON t.id = pe.trackId
+        LEFT JOIN artists ar ON ar.id = t.artistId
+        LEFT JOIN albums  al ON al.id = t.albumId
+        LEFT JOIN folders f  ON f.id  = t.folderId
+        LEFT JOIN genres  g  ON g.id  = t.genreId
+        WHERE pe.playlistId = :playlistId
+        ORDER BY pe.position ASC
+        """,
+    )
+    suspend fun playlistTracksWithNames(playlistId: Long): List<TrackWithNames>
+
+    @Query("SELECT id FROM playlists WHERE mediaStorePlaylistId = :mediaStorePlaylistId")
+    suspend fun playlistIdByMediaStoreId(mediaStorePlaylistId: Long): Long?
+
+    @Insert
+    suspend fun insertPlaylist(playlist: PlaylistEntity): Long
+
+    /** Creates a playlist typed in-app, which has no MediaStore counterpart. */
+    suspend fun createPlaylist(name: String, nowMs: Long): Long =
+        insertPlaylist(PlaylistEntity(name = name, createdAtMs = nowMs, updatedAtMs = nowMs))
+
+    /**
+     * Resolves an imported playlist to its existing row, or inserts a new one.
+     *
+     * Mirrors [resolveArtists] and friends: matching by the MediaStore id means a
+     * re-import updates the row in place instead of accumulating a duplicate on
+     * every scan.
+     */
+    @Transaction
+    suspend fun resolveImportedPlaylist(playlist: PlaylistEntity): Long {
+        val mediaStoreId = requireNotNull(playlist.mediaStorePlaylistId) {
+            "resolveImportedPlaylist requires mediaStorePlaylistId; use insertPlaylist for a manual playlist"
+        }
+        val existing = playlistIdByMediaStoreId(mediaStoreId)
+        return if (existing != null) {
+            updatePlaylistName(existing, playlist.name, playlist.updatedAtMs)
+            existing
+        } else {
+            insertPlaylist(playlist)
+        }
+    }
+
+    @Query("UPDATE playlists SET name = :name, updatedAtMs = :updatedAtMs WHERE id = :playlistId")
+    suspend fun updatePlaylistName(playlistId: Long, name: String, updatedAtMs: Long)
+
+    @Query("SELECT COALESCE(MAX(position), -1) + 1 FROM playlist_entries WHERE playlistId = :playlistId")
+    suspend fun nextPlaylistPosition(playlistId: Long): Int
+
+    @Insert
+    suspend fun insertPlaylistEntries(entries: List<PlaylistEntryEntity>)
+
+    @Query("DELETE FROM playlist_entries WHERE playlistId = :playlistId")
+    suspend fun clearPlaylistEntries(playlistId: Long)
+
+    /**
+     * Replaces a playlist's members wholesale, in the given order.
+     *
+     * This is a one-way mirror of MediaStore, not a merge: the app does not yet
+     * support reordering or removing within a playlist, so there is no in-app state
+     * that a naive overwrite could lose. Once that lands this needs to become a
+     * proper diff instead of clear-and-reinsert.
+     */
+    @Transaction
+    suspend fun replacePlaylistEntries(playlistId: Long, trackIds: List<Long>) {
+        clearPlaylistEntries(playlistId)
+        insertPlaylistEntries(
+            trackIds.mapIndexed { position, trackId ->
+                PlaylistEntryEntity(playlistId = playlistId, trackId = trackId, position = position)
+            },
+        )
+    }
+
+    @Transaction
+    suspend fun appendTrackToPlaylist(playlistId: Long, trackId: Long) {
+        val position = nextPlaylistPosition(playlistId)
+        insertPlaylistEntries(listOf(PlaylistEntryEntity(playlistId = playlistId, trackId = trackId, position = position)))
+    }
 }

@@ -21,6 +21,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -79,15 +80,8 @@ class LibraryViewModel @Inject constructor(
 
     suspend fun searchTracks(query: String): List<LocalTrack> = libraryRepository.search(query)
 
-    /**
-     * Playlists still come from MediaStore.
-     *
-     * The schema has playlists and playlist_entries, but nothing imports the user's
-     * existing MediaStore playlists into them yet, and reading from an empty table
-     * would look like data loss.
-     */
     suspend fun tracksByPlaylist(playlistId: Long): List<LocalTrack> =
-        withContext(Dispatchers.IO) { localMusicRepository.getTracksByPlaylist(playlistId) }
+        libraryRepository.tracksByPlaylist(playlistId)
 
     suspend fun tracksByGenre(genreId: Long): List<LocalTrack> =
         withContext(Dispatchers.IO) { localMusicRepository.getTracksByGenre(genreId) }
@@ -107,14 +101,12 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch { recommendationSignalsRepository.setHidden(uri, hidden) }
     }
 
-    suspend fun playlists(): List<PlaylistInfo> =
-        withContext(Dispatchers.IO) { localMusicRepository.getPlaylists() }
+    suspend fun playlists(): List<PlaylistInfo> = libraryRepository.observePlaylists().first()
 
     suspend fun addTrackToPlaylist(playlistId: Long, trackUri: String): Boolean =
-        withContext(Dispatchers.IO) { localMusicRepository.addTrackToPlaylist(playlistId, trackUri) }
+        libraryRepository.addTrackToPlaylist(playlistId, trackUri)
 
-    suspend fun createPlaylist(name: String): Long? =
-        withContext(Dispatchers.IO) { localMusicRepository.createPlaylist(name) }
+    suspend fun createPlaylist(name: String): Long? = libraryRepository.createPlaylist(name)
 
     suspend fun deleteTrack(trackUri: String): Boolean =
         withContext(Dispatchers.IO) { localMusicRepository.deleteTrack(trackUri) }

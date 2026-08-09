@@ -151,7 +151,7 @@ data class TrackFtsEntity(
     val sortTitle: String,
 )
 
-@Entity(tableName = "playlists", indices = [Index("name")])
+@Entity(tableName = "playlists", indices = [Index("name"), Index(value = ["mediaStorePlaylistId"], unique = true)])
 data class PlaylistEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
@@ -162,6 +162,13 @@ data class PlaylistEntity(
      * start so adding smart playlists later needs no migration.
      */
     val smartRules: String? = null,
+    /**
+     * MediaStore's own playlist id, present only for playlists imported from there.
+     * A unique index on this lets re-import resolve the existing row instead of
+     * inserting a duplicate on every scan; a playlist created in-app has no
+     * MediaStore counterpart and stays null.
+     */
+    val mediaStorePlaylistId: Long? = null,
 )
 
 @Entity(

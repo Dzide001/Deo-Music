@@ -23,6 +23,7 @@ class LibraryScanner @Inject constructor(
     private val mediaStoreSource: MediaStoreSource,
     private val thoroughTagPass: ThoroughTagPass,
     private val indexer: LibraryIndexer,
+    private val playlistImporter: PlaylistImporter,
     private val dao: LibraryDao,
 ) {
 
@@ -67,6 +68,9 @@ class LibraryScanner @Inject constructor(
 
                 indexer.index(enriched)
                 pruneMissing(enriched)
+                // Membership is matched by content URI against the rows the indexer
+                // just wrote, so this must run after indexing, not before.
+                playlistImporter.import()
                 dao.trackCount()
             }
         }

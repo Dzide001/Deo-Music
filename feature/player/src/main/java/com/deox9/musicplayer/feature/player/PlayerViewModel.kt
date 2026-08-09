@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.deox9.musicplayer.library.FavouritesRepository
 import com.deox9.musicplayer.library.LocalMusicRepository
 import com.deox9.musicplayer.library.PlaylistInfo
+import com.deox9.musicplayer.library.RoomLibraryRepository
 import com.deox9.musicplayer.lyrics.LyricsData
 import com.deox9.musicplayer.lyrics.LyricsRepository
 import com.deox9.musicplayer.player.PlaybackConnection
@@ -16,6 +17,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -33,6 +35,7 @@ class PlayerViewModel @Inject constructor(
     val playback: PlaybackConnection,
     private val favouritesRepository: FavouritesRepository,
     private val localMusicRepository: LocalMusicRepository,
+    private val libraryRepository: RoomLibraryRepository,
     private val lyricsRepository: LyricsRepository,
     private val settingsRepository: AppSettingsRepository,
 ) : ViewModel() {
@@ -49,14 +52,12 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch { favouritesRepository.toggle(uri) }
     }
 
-    suspend fun playlists(): List<PlaylistInfo> =
-        withContext(Dispatchers.IO) { localMusicRepository.getPlaylists() }
+    suspend fun playlists(): List<PlaylistInfo> = libraryRepository.observePlaylists().first()
 
     suspend fun addTrackToPlaylist(playlistId: Long, trackUri: String): Boolean =
-        withContext(Dispatchers.IO) { localMusicRepository.addTrackToPlaylist(playlistId, trackUri) }
+        libraryRepository.addTrackToPlaylist(playlistId, trackUri)
 
-    suspend fun createPlaylist(name: String): Long? =
-        withContext(Dispatchers.IO) { localMusicRepository.createPlaylist(name) }
+    suspend fun createPlaylist(name: String): Long? = libraryRepository.createPlaylist(name)
 
     suspend fun deleteTrack(trackUri: String): Boolean =
         withContext(Dispatchers.IO) { localMusicRepository.deleteTrack(trackUri) }

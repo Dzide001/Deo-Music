@@ -83,8 +83,9 @@ fun PlaylistsScreen(
 ) {
     val context = LocalContext.current
     var selected by remember { mutableStateOf<PlaylistInfo?>(null) }
-    // Still MediaStore: nothing imports the user's existing playlists into the
-    // schema yet, and reading an empty table would look like data loss.
+    // A one-shot read from the index rather than a live StateFlow, matching the
+    // existing screen structure; the scanner imports MediaStore playlists into the
+    // schema as part of every scan.
     val playlists by produceState<List<PlaylistInfo>>(initialValue = emptyList()) {
         value = viewModel.playlists()
     }

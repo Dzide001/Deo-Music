@@ -36,7 +36,7 @@ import com.deox9.musicplayer.database.entity.TrackFtsEntity
         FavouriteEntity::class,
         DspProfileEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class MusicDatabase : RoomDatabase() {

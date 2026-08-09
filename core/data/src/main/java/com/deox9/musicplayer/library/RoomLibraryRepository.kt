@@ -72,6 +72,33 @@ class RoomLibraryRepository @Inject constructor(
 
     suspend fun trackCount(): Int = dao.trackCount()
 
+    fun observePlaylists(): Flow<List<PlaylistInfo>> =
+        dao.observePlaylistsWithCounts().map { rows ->
+            rows.map { PlaylistInfo(id = it.id, name = it.name, trackCount = it.trackCount) }
+        }
+
+    suspend fun tracksByPlaylist(playlistId: Long): List<LocalTrack> =
+        dao.playlistTracksWithNames(playlistId).map(TrackWithNames::toLocalTrack)
+
+    suspend fun createPlaylist(name: String): Long? {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return null
+        return dao.createPlaylist(trimmed, System.currentTimeMillis())
+    }
+
+    /**
+     * Adds a track to a playlist by content URI, resolving it against the index.
+     *
+     * Returns false rather than throwing when the track is not indexed yet — a race
+     * with an in-progress scan, say — since the caller only needs to know the add did
+     * not happen, not why.
+     */
+    suspend fun addTrackToPlaylist(playlistId: Long, trackContentUri: String): Boolean {
+        val trackId = dao.trackIdForUri(trackContentUri) ?: return false
+        dao.appendTrackToPlaylist(playlistId, trackId)
+        return true
+    }
+
     private companion object {
         const val UNKNOWN_ARTIST = "Unknown artist"
         const val UNKNOWN_ALBUM = ""
