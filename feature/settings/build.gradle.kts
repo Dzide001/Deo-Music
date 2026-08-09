@@ -11,6 +11,7 @@ android {
 dependencies {
     implementation(projects.core.model)
     implementation(projects.core.ui)
+    implementation(projects.core.designsystem)
     implementation(projects.core.datastore)
 
     implementation(libs.hilt.navigation.compose)

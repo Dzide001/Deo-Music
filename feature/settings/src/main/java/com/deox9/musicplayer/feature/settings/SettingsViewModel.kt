@@ -3,6 +3,8 @@ package com.deox9.musicplayer.feature.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.deox9.musicplayer.designsystem.ThemeMode
+import com.deox9.musicplayer.designsystem.storedValue
 import com.deox9.musicplayer.settings.AppSettings
 import com.deox9.musicplayer.settings.AppSettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -37,7 +39,11 @@ class SettingsViewModel @Inject constructor(
 
     fun setGaplessEnabled(enabled: Boolean) = edit { repository.setGaplessEnabled(enabled) }
 
-    fun setDarkThemeEnabled(enabled: Boolean) = edit { repository.setDarkThemeEnabled(enabled) }
+    fun setThemeMode(mode: ThemeMode) = edit { repository.setThemeMode(mode.storedValue()) }
+
+    fun setDynamicColorEnabled(enabled: Boolean) = edit { repository.setDynamicColorEnabled(enabled) }
+
+    fun setAmoledEnabled(enabled: Boolean) = edit { repository.setAmoledEnabled(enabled) }
 
     fun setSuggestionsEnabled(enabled: Boolean) = edit { repository.setSuggestionsEnabled(enabled) }
 

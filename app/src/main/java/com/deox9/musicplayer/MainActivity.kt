@@ -53,8 +53,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -73,6 +71,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.deox9.musicplayer.designsystem.DeoTheme
+import com.deox9.musicplayer.designsystem.ThemeConfig
+import com.deox9.musicplayer.designsystem.themeModeFrom
 import com.deox9.musicplayer.feature.library.AlbumsScreen
 import com.deox9.musicplayer.feature.library.FavouritesScreen
 import com.deox9.musicplayer.feature.library.FoldersScreen
@@ -108,8 +109,15 @@ class MainActivity : ComponentActivity() {
             val settingsViewModel: SettingsViewModel = hiltViewModel()
             val appSettings by settingsViewModel.settings.collectAsState()
 
-            MaterialTheme(
-                colorScheme = if (appSettings.darkThemeEnabled) darkColorScheme() else lightColorScheme()
+            DeoTheme(
+                config = ThemeConfig(
+                    mode = themeModeFrom(appSettings.themeMode, appSettings.darkThemeEnabled),
+                    dynamicColor = appSettings.dynamicColorEnabled,
+                    amoled = appSettings.amoledEnabled,
+                    // Artwork-derived colour is wired in with the Now Playing
+                    // rebuild, which is where the current cover actually lives.
+                    seedFromArtwork = null,
+                ),
             ) {
                 AppRoot()
             }

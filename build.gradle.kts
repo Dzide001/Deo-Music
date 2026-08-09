@@ -25,6 +25,7 @@ detekt {
             "core/model/src/main/java",
             "core/data/src/main/java",
             "core/database/src/main/java",
+            "core/designsystem/src/main/java",
             "core/datastore/src/main/java",
             "core/media/src/main/java",
             "core/ui/src/main/java",

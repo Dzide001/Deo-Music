@@ -16,11 +16,28 @@ import org.json.JSONArray
 private val Context.appSettingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "app_settings")
 private const val DEFAULT_WEB_HOME_URL = "https://m.youtube.com"
 
+/**
+ * Marker for "the user has never chosen a theme mode".
+ *
+ * Distinct from "system" so an existing `darkThemeEnabled` preference can be carried
+ * across exactly once. Without it, everyone who had picked dark would silently be
+ * moved back to following the system on upgrade.
+ */
+const val THEME_MODE_UNSET = ""
+
 data class AppSettings(
     val webHomeUrl: String = DEFAULT_WEB_HOME_URL,
     val crossfadeEnabled: Boolean = false,
     val gaplessEnabled: Boolean = true,
+    /**
+     * Superseded by [themeMode]. Kept so an existing preference can be read once and
+     * carried across; nothing writes it any more.
+     */
     val darkThemeEnabled: Boolean = true,
+    /** "system" | "light" | "dark". Stored as a string so the enum can gain cases. */
+    val themeMode: String = THEME_MODE_UNSET,
+    val dynamicColorEnabled: Boolean = true,
+    val amoledEnabled: Boolean = false,
     val suggestionsEnabled: Boolean = true,
     val eqEnabled: Boolean = false,
     val replayGainEnabled: Boolean = false,
@@ -44,6 +61,9 @@ class AppSettingsRepository(private val context: Context) {
                 crossfadeEnabled = prefs[Keys.CROSSFADE_ENABLED] ?: false,
                 gaplessEnabled = prefs[Keys.GAPLESS_ENABLED] ?: true,
                 darkThemeEnabled = prefs[Keys.DARK_THEME_ENABLED] ?: true,
+                themeMode = prefs[Keys.THEME_MODE] ?: THEME_MODE_UNSET,
+                dynamicColorEnabled = prefs[Keys.DYNAMIC_COLOR_ENABLED] ?: true,
+                amoledEnabled = prefs[Keys.AMOLED_ENABLED] ?: false,
                 suggestionsEnabled = prefs[Keys.SUGGESTIONS_ENABLED] ?: true,
                 eqEnabled = prefs[Keys.EQ_ENABLED] ?: false,
                 replayGainEnabled = prefs[Keys.REPLAY_GAIN_ENABLED] ?: false,
@@ -108,6 +128,24 @@ class AppSettingsRepository(private val context: Context) {
         }
     }
 
+    suspend fun setThemeMode(mode: String) {
+        context.appSettingsDataStore.edit { prefs ->
+            prefs[Keys.THEME_MODE] = mode
+        }
+    }
+
+    suspend fun setDynamicColorEnabled(enabled: Boolean) {
+        context.appSettingsDataStore.edit { prefs ->
+            prefs[Keys.DYNAMIC_COLOR_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setAmoledEnabled(enabled: Boolean) {
+        context.appSettingsDataStore.edit { prefs ->
+            prefs[Keys.AMOLED_ENABLED] = enabled
+        }
+    }
+
     suspend fun setThoroughScanEnabled(enabled: Boolean) {
         context.appSettingsDataStore.edit { prefs ->
             prefs[Keys.THOROUGH_SCAN_ENABLED] = enabled
@@ -119,7 +157,9 @@ class AppSettingsRepository(private val context: Context) {
             prefs[Keys.WEB_HOME_URL] = DEFAULT_WEB_HOME
             prefs[Keys.CROSSFADE_ENABLED] = false
             prefs[Keys.GAPLESS_ENABLED] = true
-            prefs[Keys.DARK_THEME_ENABLED] = true
+            prefs[Keys.THEME_MODE] = THEME_MODE_UNSET
+            prefs[Keys.DYNAMIC_COLOR_ENABLED] = true
+            prefs[Keys.AMOLED_ENABLED] = false
             prefs[Keys.SUGGESTIONS_ENABLED] = true
             prefs[Keys.EQ_ENABLED] = false
             prefs[Keys.REPLAY_GAIN_ENABLED] = false
@@ -156,6 +196,9 @@ class AppSettingsRepository(private val context: Context) {
         val CROSSFADE_ENABLED = booleanPreferencesKey("crossfade_enabled")
         val GAPLESS_ENABLED = booleanPreferencesKey("gapless_enabled")
         val DARK_THEME_ENABLED = booleanPreferencesKey("dark_theme_enabled")
+        val THEME_MODE = stringPreferencesKey("theme_mode")
+        val DYNAMIC_COLOR_ENABLED = booleanPreferencesKey("dynamic_color_enabled")
+        val AMOLED_ENABLED = booleanPreferencesKey("amoled_enabled")
         val SUGGESTIONS_ENABLED = booleanPreferencesKey("suggestions_enabled")
         val EQ_ENABLED = booleanPreferencesKey("eq_enabled")
         val REPLAY_GAIN_ENABLED = booleanPreferencesKey("replay_gain_enabled")
