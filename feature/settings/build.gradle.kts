@@ -15,5 +15,6 @@ dependencies {
 
     implementation(libs.hilt.navigation.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.aboutlibraries.compose.m3)
     implementation(libs.kotlinx.coroutines.android)
 }

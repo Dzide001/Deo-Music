@@ -84,6 +84,7 @@ import com.deox9.musicplayer.feature.player.ExpandedNowPlayingScreen
 import com.deox9.musicplayer.feature.player.MiniPlayerBar
 import com.deox9.musicplayer.feature.player.PlayerViewModel
 import com.deox9.musicplayer.feature.player.QueueSidebar
+import com.deox9.musicplayer.feature.settings.OpenSourceLicensesScreen
 import com.deox9.musicplayer.feature.settings.SettingsSheet
 import com.deox9.musicplayer.feature.settings.SettingsViewModel
 import com.deox9.musicplayer.library.LocalMusicRepository
@@ -194,6 +195,7 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
     var webSearchQuery by rememberSaveable { mutableStateOf("") }
     var showSortMenu by rememberSaveable { mutableStateOf(false) }
     var showSettingsSheet by rememberSaveable { mutableStateOf(false) }
+    var showLicenses by rememberSaveable { mutableStateOf(false) }
     var songSortOption by rememberSaveable { mutableStateOf(SongSortOption.Title) }
     var albumSortOption by rememberSaveable { mutableStateOf(AlbumSortOption.Name) }
     var collectionSortOption by rememberSaveable { mutableStateOf(CollectionSortOption.Name) }
@@ -343,6 +345,18 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
             showNowPlaying = false
             suppressAutoExpand = true
         }
+    }
+
+    // A separate full-screen route rather than another branch inside the Scaffold
+    // below: the licenses list needs its own scrolling app bar and has nothing in
+    // common with the mini player / now-playing layout the Scaffold already juggles.
+    if (showLicenses) {
+        BackHandler { showLicenses = false }
+        OpenSourceLicensesScreen(
+            onBack = { showLicenses = false },
+            aboutLibrariesRawResId = R.raw.aboutlibraries
+        )
+        return
     }
 
     Scaffold(
@@ -509,6 +523,10 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
         if (showSettingsSheet) {
             SettingsSheet(
                 onDismiss = { showSettingsSheet = false },
+                onShowLicenses = {
+                    showSettingsSheet = false
+                    showLicenses = true
+                },
                 showPerfOverlay = showPerfOverlay,
                 onShowPerfOverlayChange = { showPerfOverlay = it }
             )

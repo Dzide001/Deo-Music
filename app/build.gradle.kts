@@ -9,6 +9,14 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    // Applied here, not on :feature:settings where the screen lives: with
+    // android.nonTransitiveRClass on, a module's R class only exposes resources it
+    // declares itself, and :app is the only module that actually depends on the
+    // whole graph (eAlvaTag, Media3, Room, Coil all live in sibling modules that
+    // :feature:settings does not depend on). Verified on device: applying the
+    // plugin to :feature:settings produced a licenses list missing everything
+    // outside that module's own direct dependencies.
+    alias(libs.plugins.aboutlibraries)
 }
 
 val localProps = Properties().apply {

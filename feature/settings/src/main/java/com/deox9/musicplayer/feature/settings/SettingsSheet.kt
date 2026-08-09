@@ -40,6 +40,7 @@ import com.deox9.musicplayer.web.normalizeWebUrl
 fun SettingsSheet(
     viewModel: SettingsViewModel = hiltViewModel(),
     onDismiss: () -> Unit,
+    onShowLicenses: () -> Unit,
     showPerfOverlay: Boolean,
     onShowPerfOverlayChange: (Boolean) -> Unit
 ) {
@@ -125,6 +126,10 @@ fun SettingsSheet(
                 )
             }
 
+            Spacer(modifier = Modifier.height(16.dp))
+            OutlinedButton(onClick = onShowLicenses) {
+                Text("Open source licenses")
+            }
             Spacer(modifier = Modifier.height(16.dp))
             OutlinedButton(
                 onClick = {
