@@ -27,7 +27,6 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -945,11 +944,8 @@ private fun LocalTrackRow(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        // A marker, not a button. The row is 360dp wide on this phone and the old
-        // trailing stack — duration, a star button, a "Queue" text button — left
-        // about 100dp for the title, so every row ellipsised after a few characters.
-        // Both actions survive: double-tap still toggles the favourite and the
-        // overflow menu carries the queue, which is where the width went.
+        // A marker, not a button, and only present when it applies — so an
+        // unfavourited row spends nothing on it.
         if (isFavourite) {
             Icon(
                 imageVector = Icons.Filled.Star,
@@ -959,13 +955,14 @@ private fun LocalTrackRow(
             )
             Spacer(modifier = Modifier.width(6.dp))
         }
-        IconButton(onClick = { showContextMenu = true }) {
-            Icon(
-                imageVector = Icons.Filled.MoreVert,
-                contentDescription = "More actions for ${track.title}",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        // Duration rather than an overflow button. Both cost about the same width
+        // and only one fits at 360dp: this one is information on every row, where
+        // the button was an affordance for a menu that long-press already opens.
+        Text(
+            text = formatDuration(track.durationMs),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
         TrackContextMenu(
             expanded = showContextMenu,
