@@ -142,6 +142,7 @@ dependencies {
     implementation(projects.feature.player)
     implementation(projects.feature.library)
     implementation(projects.feature.settings)
+    implementation(projects.feature.widget)
 
     implementation(platform(libs.compose.bom))
 

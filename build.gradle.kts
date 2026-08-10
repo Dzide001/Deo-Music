@@ -32,6 +32,7 @@ detekt {
             "feature/player/src/main/java",
             "feature/library/src/main/java",
             "feature/settings/src/main/java",
+            "feature/widget/src/main/java",
         ),
     )
     parallel = true

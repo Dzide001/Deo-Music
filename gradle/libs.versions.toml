@@ -72,6 +72,7 @@ compose-material-icons-extended = { module = "androidx.compose.material:material
 compose-material3-adaptive = { module = "androidx.compose.material3.adaptive:adaptive", version.ref = "composeAdaptive" }
 navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigation" }
 glance-appwidget = { module = "androidx.glance:glance-appwidget", version.ref = "glance" }
+glance-material3 = { module = "androidx.glance:glance-material3", version.ref = "glance" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
 androidx-profileinstaller = { module = "androidx.profileinstaller:profileinstaller", version.ref = "profileinstaller" }
