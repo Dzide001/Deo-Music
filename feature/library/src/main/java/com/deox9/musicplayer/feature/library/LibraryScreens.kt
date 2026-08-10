@@ -96,14 +96,31 @@ fun PlaylistsScreen(
         value = viewModel.playlists()
     }
 
-    if (selected != null) {
-        PlaylistDetailScreen(
-            playlist = selected!!,
-            onBack = { selected = null }
+    ListDetailPane(
+        detail = selected?.let { playlist ->
+            {
+                PlaylistDetailScreen(playlist = playlist, onBack = { selected = null })
+            }
+        },
+    ) {
+        PlaylistsList(
+            playlists = playlists,
+            searchQuery = searchQuery,
+            sortOption = sortOption,
+            listState = listState,
+            onSelect = { selected = it }
         )
-        return
     }
+}
 
+@Composable
+private fun PlaylistsList(
+    playlists: List<PlaylistInfo>,
+    searchQuery: String,
+    sortOption: CollectionSortOption,
+    listState: LazyListState,
+    onSelect: (PlaylistInfo) -> Unit
+) {
     val filtered = remember(playlists, searchQuery, sortOption) {
         val searched = if (searchQuery.isBlank()) playlists else {
             val q = searchQuery.trim().lowercase()
@@ -131,7 +148,7 @@ fun PlaylistsScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { selected = playlist }
+                    .clickable { onSelect(playlist) }
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
@@ -165,14 +182,31 @@ fun FoldersScreen(
     var selected by remember { mutableStateOf<FolderInfo?>(null) }
     val folders by viewModel.folders.collectAsState()
 
-    if (selected != null) {
-        FolderDetailScreen(
-            folder = selected!!,
-            onBack = { selected = null }
+    ListDetailPane(
+        detail = selected?.let { folder ->
+            {
+                FolderDetailScreen(folder = folder, onBack = { selected = null })
+            }
+        },
+    ) {
+        FoldersList(
+            folders = folders,
+            searchQuery = searchQuery,
+            sortOption = sortOption,
+            listState = listState,
+            onSelect = { selected = it }
         )
-        return
     }
+}
 
+@Composable
+private fun FoldersList(
+    folders: List<FolderInfo>,
+    searchQuery: String,
+    sortOption: CollectionSortOption,
+    listState: LazyListState,
+    onSelect: (FolderInfo) -> Unit
+) {
     val filtered = remember(folders, searchQuery, sortOption) {
         val searched = if (searchQuery.isBlank()) folders else {
             val q = searchQuery.trim().lowercase()
@@ -200,7 +234,7 @@ fun FoldersScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { selected = folder }
+                    .clickable { onSelect(folder) }
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
@@ -234,14 +268,31 @@ fun GenresScreen(
     var selected by remember { mutableStateOf<GenreInfo?>(null) }
     val genres by viewModel.genres.collectAsState()
 
-    if (selected != null) {
-        GenreDetailScreen(
-            genre = selected!!,
-            onBack = { selected = null }
+    ListDetailPane(
+        detail = selected?.let { genre ->
+            {
+                GenreDetailScreen(genre = genre, onBack = { selected = null })
+            }
+        },
+    ) {
+        GenresList(
+            genres = genres,
+            searchQuery = searchQuery,
+            sortOption = sortOption,
+            listState = listState,
+            onSelect = { selected = it }
         )
-        return
     }
+}
 
+@Composable
+private fun GenresList(
+    genres: List<GenreInfo>,
+    searchQuery: String,
+    sortOption: CollectionSortOption,
+    listState: LazyListState,
+    onSelect: (GenreInfo) -> Unit
+) {
     val filtered = remember(genres, searchQuery, sortOption) {
         val searched = if (searchQuery.isBlank()) genres else {
             val q = searchQuery.trim().lowercase()
@@ -269,7 +320,7 @@ fun GenresScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { selected = genre }
+                    .clickable { onSelect(genre) }
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
@@ -760,16 +811,10 @@ fun LibraryScreen(
     }
 
     if (!hasPermission) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "Allow audio access to load your local music library.",
-                style = MaterialTheme.typography.bodyLarge
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Button(onClick = { permissionLauncher.launch(audioPermission) }) {
-                Text("Grant permission")
-            }
-        }
+        AudioPermissionPrompt(
+            message = "Allow audio access to load your local music library.",
+            onGrant = { permissionLauncher.launch(audioPermission) }
+        )
         return
     }
 
@@ -1043,28 +1088,48 @@ fun AlbumsScreen(
     // sampling .value without a collector returns the initial empty list forever.
     val albums by viewModel.albums.collectAsState()
 
-    if (selectedAlbum != null) {
-        AlbumDetailScreen(
-            album = selectedAlbum!!,
-            onBack = { selectedAlbum = null }
-        )
-        return
-    }
-
-    if (!hasPermission) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "Allow audio access to load your music library.",
-                style = MaterialTheme.typography.bodyLarge
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Button(onClick = { permissionLauncher.launch(audioPermission) }) {
-                Text("Grant permission")
+    ListDetailPane(
+        detail = selectedAlbum?.let { album ->
+            {
+                AlbumDetailScreen(album = album, onBack = { selectedAlbum = null })
             }
+        },
+    ) {
+        if (hasPermission) {
+            AlbumsList(
+                albums = albums,
+                searchQuery = searchQuery,
+                sortOption = sortOption,
+                listState = listState,
+                onSelect = { selectedAlbum = it }
+            )
+        } else {
+            AudioPermissionPrompt(
+                message = "Allow audio access to load your music library.",
+                onGrant = { permissionLauncher.launch(audioPermission) }
+            )
         }
-        return
     }
+}
 
+/** Shared by the two screens that gate on the audio permission. */
+@Composable
+private fun AudioPermissionPrompt(message: String, onGrant: () -> Unit) {
+    Column(modifier = Modifier.padding(16.dp)) {
+        Text(text = message, style = MaterialTheme.typography.bodyLarge)
+        Spacer(modifier = Modifier.height(12.dp))
+        Button(onClick = onGrant) { Text("Grant permission") }
+    }
+}
+
+@Composable
+private fun AlbumsList(
+    albums: List<Album>,
+    searchQuery: String,
+    sortOption: AlbumSortOption,
+    listState: LazyListState,
+    onSelect: (Album) -> Unit
+) {
     val filteredAlbums by produceState(
         initialValue = emptyList<Album>(),
         key1 = albums,
@@ -1109,7 +1174,7 @@ fun AlbumsScreen(
             items(filteredAlbums, key = { it.id }) { album ->
                 AlbumCard(
                     album = album,
-                    onClick = { selectedAlbum = album }
+                    onClick = { onSelect(album) }
                 )
             }
         }

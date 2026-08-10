@@ -13,12 +13,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
@@ -56,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.deox9.musicplayer.player.PlaybackState
 import com.deox9.musicplayer.ui.formatDuration
+import com.deox9.musicplayer.ui.rememberWindowLayout
 
 /**
  * The expanded player.
@@ -92,6 +95,7 @@ fun ExpandedNowPlayingScreen(
 
     val hasTrack = session != null
     val currentUri = session?.uri.orEmpty()
+    val windowLayout = rememberWindowLayout()
 
     // The backdrop is on the outer box so it reaches the screen edges; the insets are
     // on the inner column so the controls do not. The host draws this with no padding
@@ -120,75 +124,44 @@ fun ExpandedNowPlayingScreen(
                 onRequestDialog = { dialog = it },
             )
 
-            // The artwork takes whatever height is left after the controls, so a short
-            // screen shrinks the cover instead of pushing the transport row off the
-            // bottom — which is what a fixed 260dp pager used to do.
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentAlignment = Alignment.Center,
-            ) {
-                BoxWithConstraints {
-                    val side = minOf(maxWidth, maxHeight)
-                    ArtworkImage(
-                        artworkUri = session?.albumArtUri,
-                        contentDescription = session?.let { "Album art for ${it.title}" },
-                        cornerRadius = 24.dp,
-                        modifier = Modifier
-                            .size(side)
-                            .aspectRatio(1f),
-                    )
-                }
+            val artwork: @Composable (Modifier) -> Unit = { modifier ->
+                NowPlayingArtwork(session = session, modifier = modifier)
+            }
+            val controls: @Composable (Modifier) -> Unit = { modifier ->
+                NowPlayingControls(
+                    session = session,
+                    accent = accent,
+                    isFavourite = currentUri in favourites,
+                    hasTrack = hasTrack,
+                    playback = playback,
+                    onGoToArtist = onGoToArtist,
+                    onToggleFavourite = { viewModel.toggleFavourite(currentUri) },
+                    onOpenQueue = onOpenQueue,
+                    onRequestDialog = { dialog = it },
+                    modifier = modifier,
+                )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            TrackHeadline(
-                title = session?.title ?: "Nothing playing",
-                artist = session?.artist?.takeIf(String::isNotBlank) ?: "Pick a track from your library",
-                onArtistClick = {
-                    val name = session?.artist.orEmpty().trim()
-                    if (name.isNotBlank()) onGoToArtist(name)
-                },
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            SeekBar(
-                session = session,
-                accent = accent,
-                onSeek = playback::seekTo,
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            TransportControls(
-                isPlaying = session?.isPlaying == true,
-                shuffleEnabled = session?.shuffleEnabled == true,
-                repeatMode = session?.repeatMode ?: REPEAT_OFF,
-                enabled = hasTrack,
-                accent = accent,
-                onShuffle = playback::toggleShuffle,
-                onPrevious = playback::skipPrevious,
-                onPlayPause = playback::togglePlayPause,
-                onNext = playback::skipNext,
-                onRepeat = playback::cycleRepeat,
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            SecondaryActions(
-                isFavourite = currentUri in favourites,
-                enabled = hasTrack,
-                accent = accent,
-                onToggleFavourite = { viewModel.toggleFavourite(currentUri) },
-                onOpenLyrics = { dialog = PlayerDialog.Lyrics },
-                onOpenQueue = onOpenQueue,
-                onOpenAudioSettings = { dialog = PlayerDialog.AudioSettings },
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
+            if (windowLayout.playerSideBySide) {
+                // A phone in landscape has no room to stack a square cover above a
+                // transport row without losing one of them, so they go side by side.
+                // The decision is on height, not width: a tall tablet in landscape
+                // has plenty of room to stack and gets an enormous cover for it.
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    artwork(Modifier.weight(1f).fillMaxHeight())
+                    Spacer(modifier = Modifier.width(24.dp))
+                    controls(Modifier.weight(1f))
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            } else {
+                artwork(Modifier.weight(1f).fillMaxWidth())
+                Spacer(modifier = Modifier.height(24.dp))
+                controls(Modifier.fillMaxWidth())
+                Spacer(modifier = Modifier.height(12.dp))
+            }
         }
     }
 
@@ -199,6 +172,93 @@ fun ExpandedNowPlayingScreen(
         session = session,
         onMinimize = onMinimize,
     )
+}
+
+/**
+ * The cover, as large as the space it is handed allows.
+ *
+ * Sized from the constraints rather than to a fixed height so it shrinks on a short
+ * window instead of pushing the transport row off the bottom — which is what the
+ * fixed 260dp pager it replaced used to do.
+ */
+@Composable
+private fun NowPlayingArtwork(session: PlaybackState?, modifier: Modifier = Modifier) {
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        BoxWithConstraints {
+            val side = minOf(maxWidth, maxHeight)
+            ArtworkImage(
+                artworkUri = session?.albumArtUri,
+                contentDescription = session?.let { "Album art for ${it.title}" },
+                cornerRadius = 24.dp,
+                modifier = Modifier
+                    .size(side)
+                    .aspectRatio(1f),
+            )
+        }
+    }
+}
+
+/**
+ * Everything below (or beside) the cover: metadata, seek bar, transport, extras.
+ *
+ * Grouped so the two window layouts differ only in whether this sits under the
+ * artwork or next to it, rather than in two copies of the same call sequence — which
+ * is how the screen this replaced ended up with two divergent transport rows.
+ */
+@Composable
+private fun NowPlayingControls(
+    session: PlaybackState?,
+    accent: Color,
+    isFavourite: Boolean,
+    hasTrack: Boolean,
+    playback: com.deox9.musicplayer.player.PlaybackConnection,
+    onGoToArtist: (String) -> Unit,
+    onToggleFavourite: () -> Unit,
+    onOpenQueue: () -> Unit,
+    onRequestDialog: (PlayerDialog) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        TrackHeadline(
+            title = session?.title ?: "Nothing playing",
+            artist = session?.artist?.takeIf(String::isNotBlank) ?: "Pick a track from your library",
+            onArtistClick = {
+                val name = session?.artist.orEmpty().trim()
+                if (name.isNotBlank()) onGoToArtist(name)
+            },
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        SeekBar(session = session, accent = accent, onSeek = playback::seekTo)
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        TransportControls(
+            isPlaying = session?.isPlaying == true,
+            shuffleEnabled = session?.shuffleEnabled == true,
+            repeatMode = session?.repeatMode ?: REPEAT_OFF,
+            enabled = hasTrack,
+            accent = accent,
+            onShuffle = playback::toggleShuffle,
+            onPrevious = playback::skipPrevious,
+            onPlayPause = playback::togglePlayPause,
+            onNext = playback::skipNext,
+            onRepeat = playback::cycleRepeat,
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        SecondaryActions(
+            isFavourite = isFavourite,
+            enabled = hasTrack,
+            accent = accent,
+            onToggleFavourite = onToggleFavourite,
+            onOpenLyrics = { onRequestDialog(PlayerDialog.Lyrics) },
+            onOpenQueue = onOpenQueue,
+            onOpenAudioSettings = { onRequestDialog(PlayerDialog.AudioSettings) },
+        )
+    }
 }
 
 /**

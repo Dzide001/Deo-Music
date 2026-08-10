@@ -61,11 +61,31 @@ fun ArtistsScreen(
     var selected by remember { mutableStateOf<ArtistInfo?>(null) }
     val artists by viewModel.artists.collectAsState()
 
-    if (selected != null) {
-        ArtistDetailScreen(artist = selected!!, onBack = { selected = null })
-        return
+    ListDetailPane(
+        detail = selected?.let { artist ->
+            {
+                ArtistDetailScreen(artist = artist, onBack = { selected = null })
+            }
+        },
+    ) {
+        ArtistsList(
+            artists = artists,
+            searchQuery = searchQuery,
+            sortOption = sortOption,
+            listState = listState,
+            onSelect = { selected = it },
+        )
     }
+}
 
+@Composable
+private fun ArtistsList(
+    artists: List<ArtistInfo>,
+    searchQuery: String,
+    sortOption: CollectionSortOption,
+    listState: LazyListState,
+    onSelect: (ArtistInfo) -> Unit,
+) {
     val filtered = remember(artists, searchQuery, sortOption) {
         val searched = if (searchQuery.isBlank()) {
             artists
@@ -97,7 +117,7 @@ fun ArtistsScreen(
             contentPadding = PaddingValues(end = if (showRail) FastScrollGutter else 0.dp),
         ) {
             items(filtered, key = { it.id }) { artist ->
-                ArtistRow(artist = artist, onClick = { selected = artist })
+                ArtistRow(artist = artist, onClick = { onSelect(artist) })
                 HorizontalDivider()
             }
         }

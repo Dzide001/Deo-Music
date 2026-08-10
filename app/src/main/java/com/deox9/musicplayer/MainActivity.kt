@@ -19,29 +19,32 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
@@ -53,11 +56,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -69,10 +75,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -100,9 +107,11 @@ import com.deox9.musicplayer.library.LocalMusicRepository
 import com.deox9.musicplayer.scanner.LibraryScanWorker
 import com.deox9.musicplayer.ui.AlbumSortOption
 import com.deox9.musicplayer.ui.CollectionSortOption
+import com.deox9.musicplayer.ui.NavigationStyle
 import com.deox9.musicplayer.ui.SongSortOption
 import com.deox9.musicplayer.ui.isDebugBuild
 import com.deox9.musicplayer.ui.label
+import com.deox9.musicplayer.ui.rememberWindowLayout
 import com.deox9.musicplayer.web.WebPlayback
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
@@ -226,6 +235,7 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
     var destination by rememberSaveable { mutableStateOf(RootDestination.Library) }
     var localTab by rememberSaveable { mutableStateOf(LocalCategoryTab.Songs) }
     var localSearchQuery by rememberSaveable { mutableStateOf("") }
+    var searchActive by rememberSaveable { mutableStateOf(false) }
     var appliedLocalSearchQuery by rememberSaveable { mutableStateOf("") }
     var webSearchQuery by rememberSaveable { mutableStateOf("") }
     var showSortMenu by rememberSaveable { mutableStateOf(false) }
@@ -396,209 +406,280 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
         return
     }
 
-    Scaffold(
-        topBar = {
-            if (!showNowPlaying) {
-                // The app draws edge to edge (enforced from targetSdk 35), so the
-                // header must inset itself past the status bar. Without this the
-                // header sits underneath it and the status bar swallows taps —
-                // which made the Settings button unreachable on-device.
-                Box(modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars)) {
-                    AppHeader(
-                        destination = destination,
-                        localTab = localTab,
-                        localSearchQuery = localSearchQuery,
-                        webSearchQuery = webSearchQuery,
-                        onLocalSearchChange = { localSearchQuery = it },
-                        onWebSearchChange = { webSearchQuery = it },
-                        showSortMenu = showSortMenu,
-                        onShowSortMenuChange = { showSortMenu = it },
-                        onOpenSettings = { showSettingsSheet = true },
-                        songSortOption = songSortOption,
-                        albumSortOption = albumSortOption,
-                        onSongSortChange = {
-                            songSortOption = it
-                            showSortMenu = false
-                        },
-                        onAlbumSortChange = {
-                            albumSortOption = it
-                            showSortMenu = false
-                        },
-                        collectionSortOption = collectionSortOption,
-                        onCollectionSortChange = {
-                            collectionSortOption = it
-                            showSortMenu = false
-                        }
-                    )
-                }
-            }
-        },
-        bottomBar = {
-            // Likewise for the gesture bar, which otherwise overlaps the mini player.
-            Column(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
+    // Reads the window the app was given, not the display: a phone-width split
+    // window on a tablet has to be laid out like a phone.
+    val windowLayout = rememberWindowLayout()
+    val useRail = windowLayout.navigationStyle == NavigationStyle.Rail && !showNowPlaying
+
+    Row(modifier = Modifier.fillMaxSize()) {
+        if (useRail) {
+            AppNavigationRail(
+                selected = destination,
+                onSelect = { destination = it },
+            )
+        }
+
+        Scaffold(
+            topBar = {
                 if (!showNowPlaying) {
-                    MiniPlayerBar(
-                        session = session,
-                        onExpand = { showNowPlaying = true },
-                        onOpenQueue = { showQueueSheet = true }
-                    )
-                    NavigationBar {
-                        RootDestination.entries.filter { it.available }.forEach { item ->
-                            val selected = destination == item
-                            NavigationBarItem(
-                                selected = selected,
-                                onClick = { destination = item },
-                                label = { Text(item.label) },
-                                icon = {
-                                    Icon(
-                                        // Filled when selected, outlined otherwise —
-                                        // the Material convention, and a second cue
-                                        // beyond colour for anyone who cannot rely on it.
-                                        imageVector = if (selected) item.selectedIcon else item.icon,
-                                        contentDescription = null,
-                                    )
-                                },
+                    // The app draws edge to edge (enforced from targetSdk 35), so the
+                    // header must inset itself past the status bar. Without this the
+                    // header sits underneath it and the status bar swallows taps —
+                    // which made the Settings button unreachable on-device.
+                    Box(modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars)) {
+                        AppHeader(
+                            destination = destination,
+                            localTab = localTab,
+                            searchActive = searchActive,
+                            onSearchActiveChange = { searchActive = it },
+                            localSearchQuery = localSearchQuery,
+                            webSearchQuery = webSearchQuery,
+                            onLocalSearchChange = { localSearchQuery = it },
+                            onWebSearchChange = { webSearchQuery = it },
+                            onRescan = {
+                                LibraryScanWorker.enqueue(context, thorough = true)
+                            },
+                            showSortMenu = showSortMenu,
+                            onShowSortMenuChange = { showSortMenu = it },
+                            onOpenSettings = { showSettingsSheet = true },
+                            songSortOption = songSortOption,
+                            albumSortOption = albumSortOption,
+                            onSongSortChange = {
+                                songSortOption = it
+                                showSortMenu = false
+                            },
+                            onAlbumSortChange = {
+                                albumSortOption = it
+                                showSortMenu = false
+                            },
+                            collectionSortOption = collectionSortOption,
+                            onCollectionSortChange = {
+                                collectionSortOption = it
+                                showSortMenu = false
+                            }
+                        )
+                    }
+                }
+            },
+            bottomBar = {
+                // Likewise for the gesture bar, which otherwise overlaps the mini player.
+                Column(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
+                    if (!showNowPlaying) {
+                        MiniPlayerBar(
+                            session = session,
+                            onExpand = { showNowPlaying = true },
+                            onOpenQueue = { showQueueSheet = true }
+                        )
+                        // The mini player stays along the bottom even with a rail: it is
+                        // the width of it that makes the artwork and title readable, and
+                        // a rail-width version would be a column of icons.
+                        if (!useRail) {
+                            AppNavigationBar(
+                                selected = destination,
+                                onSelect = { destination = it },
                             )
                         }
                     }
                 }
             }
-        }
-    ) { innerPadding ->
-        if (showNowPlaying) {
-            ExpandedNowPlayingScreen(
-                session = session,
-                onMinimize = {
-                    showNowPlaying = false
-                    suppressAutoExpand = true
-                },
-                onOpenQueue = { showQueueSheet = true },
-                onGoToArtist = { artistName ->
-                    destination = RootDestination.Library
-                    // The Artists tab exists now, so "go to artist" lands on the
-                    // artist rather than on a song list filtered by their name.
-                    localTab = LocalCategoryTab.Artists
-                    localSearchQuery = artistName
-                    appliedLocalSearchQuery = artistName
-                    showNowPlaying = false
-                    suppressAutoExpand = true
-                },
-                onViewAlbum = { albumName ->
-                    destination = RootDestination.Library
-                    localTab = LocalCategoryTab.Albums
-                    localSearchQuery = albumName
-                    appliedLocalSearchQuery = albumName
-                    showNowPlaying = false
-                    suppressAutoExpand = true
-                }
-            )
-        } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-            ) {
-                if (WebPlayback.IS_AVAILABLE) {
-                    // Kept composed across destinations so the page and any playing
-                    // media survive switching away and back.
-                    WebPlayback.Screen(
-                        searchQuery = webSearchQuery,
-                        isVisible = destination == RootDestination.Web,
-                        onWebViewReady = { webPlaybackView = it }
-                    )
-                }
-
-                if (destination == RootDestination.Search) {
-                    SearchScreen(listState = searchListState)
-                }
-
-                if (destination == RootDestination.Library) {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        LocalCategoryTabs(
-                            selected = localTab,
-                            onSelect = { localTab = it }
+        ) { innerPadding ->
+            if (showNowPlaying) {
+                ExpandedNowPlayingScreen(
+                    session = session,
+                    onMinimize = {
+                        showNowPlaying = false
+                        suppressAutoExpand = true
+                    },
+                    onOpenQueue = { showQueueSheet = true },
+                    onGoToArtist = { artistName ->
+                        destination = RootDestination.Library
+                        // The Artists tab exists now, so "go to artist" lands on the
+                        // artist rather than on a song list filtered by their name.
+                        localTab = LocalCategoryTab.Artists
+                        localSearchQuery = artistName
+                        appliedLocalSearchQuery = artistName
+                        searchActive = true
+                        showNowPlaying = false
+                        suppressAutoExpand = true
+                    },
+                    onViewAlbum = { albumName ->
+                        destination = RootDestination.Library
+                        localTab = LocalCategoryTab.Albums
+                        localSearchQuery = albumName
+                        appliedLocalSearchQuery = albumName
+                        searchActive = true
+                        showNowPlaying = false
+                        suppressAutoExpand = true
+                    }
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                ) {
+                    if (WebPlayback.IS_AVAILABLE) {
+                        // Kept composed across destinations so the page and any playing
+                        // media survive switching away and back.
+                        WebPlayback.Screen(
+                            searchQuery = webSearchQuery,
+                            isVisible = destination == RootDestination.Web,
+                            onWebViewReady = { webPlaybackView = it }
                         )
-                        Box(modifier = Modifier.weight(1f)) {
-                            when (localTab) {
-                                LocalCategoryTab.Songs -> LibraryScreen(
-                                    searchQuery = appliedLocalSearchQuery,
-                                    sortOption = songSortOption,
-                                    listState = songsListState
-                                )
-                                LocalCategoryTab.Albums -> AlbumsScreen(
-                                    searchQuery = appliedLocalSearchQuery,
-                                    sortOption = albumSortOption,
-                                    listState = albumsListState
-                                )
-                                LocalCategoryTab.Artists -> ArtistsScreen(
-                                    searchQuery = appliedLocalSearchQuery,
-                                    sortOption = collectionSortOption,
-                                    listState = artistsListState
-                                )
-                                LocalCategoryTab.Playlists -> PlaylistsScreen(
-                                    searchQuery = appliedLocalSearchQuery,
-                                    sortOption = collectionSortOption,
-                                    listState = playlistsListState
-                                )
-                                LocalCategoryTab.Folders -> FoldersScreen(
-                                    searchQuery = appliedLocalSearchQuery,
-                                    sortOption = collectionSortOption,
-                                    listState = foldersListState
-                                )
-                                LocalCategoryTab.Genres -> GenresScreen(
-                                    searchQuery = appliedLocalSearchQuery,
-                                    sortOption = collectionSortOption,
-                                    listState = genresListState
-                                )
-                                LocalCategoryTab.Suggested -> SuggestedScreen(
-                                    listState = suggestedListState
-                                )
-                                LocalCategoryTab.Favourites -> FavouritesScreen(
-                                    searchQuery = appliedLocalSearchQuery,
-                                    sortOption = songSortOption,
-                                    listState = favouritesListState
-                                )
+                    }
+
+                    if (destination == RootDestination.Search) {
+                        SearchScreen(listState = searchListState)
+                    }
+
+                    if (destination == RootDestination.Library) {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            LocalCategoryTabs(
+                                selected = localTab,
+                                onSelect = { localTab = it }
+                            )
+                            Box(modifier = Modifier.weight(1f)) {
+                                when (localTab) {
+                                    LocalCategoryTab.Songs -> LibraryScreen(
+                                        searchQuery = appliedLocalSearchQuery,
+                                        sortOption = songSortOption,
+                                        listState = songsListState
+                                    )
+                                    LocalCategoryTab.Albums -> AlbumsScreen(
+                                        searchQuery = appliedLocalSearchQuery,
+                                        sortOption = albumSortOption,
+                                        listState = albumsListState
+                                    )
+                                    LocalCategoryTab.Artists -> ArtistsScreen(
+                                        searchQuery = appliedLocalSearchQuery,
+                                        sortOption = collectionSortOption,
+                                        listState = artistsListState
+                                    )
+                                    LocalCategoryTab.Playlists -> PlaylistsScreen(
+                                        searchQuery = appliedLocalSearchQuery,
+                                        sortOption = collectionSortOption,
+                                        listState = playlistsListState
+                                    )
+                                    LocalCategoryTab.Folders -> FoldersScreen(
+                                        searchQuery = appliedLocalSearchQuery,
+                                        sortOption = collectionSortOption,
+                                        listState = foldersListState
+                                    )
+                                    LocalCategoryTab.Genres -> GenresScreen(
+                                        searchQuery = appliedLocalSearchQuery,
+                                        sortOption = collectionSortOption,
+                                        listState = genresListState
+                                    )
+                                    LocalCategoryTab.Suggested -> SuggestedScreen(
+                                        listState = suggestedListState
+                                    )
+                                    LocalCategoryTab.Favourites -> FavouritesScreen(
+                                        searchQuery = appliedLocalSearchQuery,
+                                        sortOption = songSortOption,
+                                        listState = favouritesListState
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
-        }
 
-        if (showQueueSheet) {
-            QueueSidebar(
-                queue = session?.queue.orEmpty(),
-                currentIndex = session?.currentIndex ?: -1,
-                onDismiss = { showQueueSheet = false }
-            )
-        }
+            if (showQueueSheet) {
+                QueueSidebar(
+                    queue = session?.queue.orEmpty(),
+                    currentIndex = session?.currentIndex ?: -1,
+                    onDismiss = { showQueueSheet = false }
+                )
+            }
 
-        if (showSettingsSheet) {
-            SettingsSheet(
-                onDismiss = { showSettingsSheet = false },
-                onShowLicenses = {
-                    showSettingsSheet = false
-                    showLicenses = true
-                },
-                showPerfOverlay = showPerfOverlay,
-                onShowPerfOverlayChange = { showPerfOverlay = it }
-            )
-        }
+            if (showSettingsSheet) {
+                SettingsSheet(
+                    onDismiss = { showSettingsSheet = false },
+                    onShowLicenses = {
+                        showSettingsSheet = false
+                        showLicenses = true
+                    },
+                    showPerfOverlay = showPerfOverlay,
+                    onShowPerfOverlayChange = { showPerfOverlay = it }
+                )
+            }
 
-        if (isDebugBuild(context) && showPerfOverlay) {
-            DebugPerformanceOverlay(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp, end = 8.dp)
+            if (isDebugBuild(context) && showPerfOverlay) {
+                DebugPerformanceOverlay(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp, end = 8.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Top-level navigation along the bottom, for a window a thumb can reach across.
+ */
+@Composable
+private fun AppNavigationBar(
+    selected: RootDestination,
+    onSelect: (RootDestination) -> Unit,
+) {
+    NavigationBar {
+        RootDestination.entries.filter { it.available }.forEach { item ->
+            NavigationBarItem(
+                selected = selected == item,
+                onClick = { onSelect(item) },
+                label = { Text(item.label) },
+                icon = { DestinationIcon(item, selected == item) },
             )
         }
     }
+}
+
+/**
+ * The same destinations down the leading edge, from Medium width up.
+ *
+ * A bottom bar on a tablet spends the scarcest dimension — vertical space — on
+ * controls that are nowhere near where the hands are. The rail insets itself because
+ * it sits outside the Scaffold, so nothing else is padding it past the status bar or
+ * a display cutout on the left edge.
+ */
+@Composable
+private fun AppNavigationRail(
+    selected: RootDestination,
+    onSelect: (RootDestination) -> Unit,
+) {
+    NavigationRail(
+        modifier = Modifier.windowInsetsPadding(
+            WindowInsets.safeDrawing.only(WindowInsetsSides.Start + WindowInsetsSides.Vertical),
+        ),
+    ) {
+        RootDestination.entries.filter { it.available }.forEach { item ->
+            NavigationRailItem(
+                selected = selected == item,
+                onClick = { onSelect(item) },
+                label = { Text(item.label) },
+                icon = { DestinationIcon(item, selected == item) },
+            )
+        }
+    }
+}
+
+/** Filled when selected, outlined otherwise — a second cue beyond colour. */
+@Composable
+private fun DestinationIcon(destination: RootDestination, selected: Boolean) {
+    Icon(
+        imageVector = if (selected) destination.selectedIcon else destination.icon,
+        contentDescription = null,
+    )
 }
 
 @Composable
 private fun AppHeader(
     destination: RootDestination,
     localTab: LocalCategoryTab,
+    searchActive: Boolean,
+    onSearchActiveChange: (Boolean) -> Unit,
     localSearchQuery: String,
     webSearchQuery: String,
     onLocalSearchChange: (String) -> Unit,
@@ -606,6 +687,7 @@ private fun AppHeader(
     showSortMenu: Boolean,
     onShowSortMenuChange: (Boolean) -> Unit,
     onOpenSettings: () -> Unit,
+    onRescan: () -> Unit,
     songSortOption: SongSortOption,
     albumSortOption: AlbumSortOption,
     collectionSortOption: CollectionSortOption,
@@ -613,90 +695,169 @@ private fun AppHeader(
     onAlbumSortChange: (AlbumSortOption) -> Unit,
     onCollectionSortChange: (CollectionSortOption) -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Image(
-                painter = painterResource(id = R.drawable.app_logo),
-                contentDescription = "App Logo",
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(RoundedCornerShape(6.dp))
-            )
+    if (searchActive) {
+        HeaderSearchField(
+            destination = destination,
+            localTab = localTab,
+            localSearchQuery = localSearchQuery,
+            webSearchQuery = webSearchQuery,
+            onLocalSearchChange = onLocalSearchChange,
+            onWebSearchChange = onWebSearchChange,
+            onClose = { onSearchActiveChange(false) }
+        )
+        return
+    }
 
-            Text(
-                text = "Music Player",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 20.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // The app's own name and logo used to sit here. On the one screen the user
+        // is already looking at, in an app they chose to open, neither told them
+        // anything — and together they cost a whole bar above the one that does.
+        Text(
+            text = destination.label,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold
+        )
 
-            Spacer(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.weight(1f))
 
-            IconButton(onClick = { onShowSortMenuChange(true) }) {
+        // The filter is a button rather than a permanently open text field. The
+        // field was ~90dp of chrome on every screen for something used
+        // occasionally, and it pushed the list down by more than a row.
+        if (destination != RootDestination.Search) {
+            IconButton(onClick = { onSearchActiveChange(true) }) {
                 Icon(
-                    imageVector = Icons.Default.MoreVert,
-                    contentDescription = "Sort and filter"
-                )
-            }
-            SortMenu(
-                expanded = showSortMenu,
-                onDismiss = { onShowSortMenuChange(false) },
-                family = if (destination == RootDestination.Library) {
-                    localTab.sortFamily()
-                } else {
-                    SortFamily.None
-                },
-                songSortOption = songSortOption,
-                albumSortOption = albumSortOption,
-                collectionSortOption = collectionSortOption,
-                onSongSortChange = onSongSortChange,
-                onAlbumSortChange = onAlbumSortChange,
-                onCollectionSortChange = onCollectionSortChange,
-            )
-
-            IconButton(onClick = onOpenSettings) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = "Settings"
+                    imageVector = Icons.Filled.Search,
+                    contentDescription = "Filter ${destination.label.lowercase()}"
                 )
             }
         }
 
-        // Narrows the list you are looking at. Distinct from the Search
-        // destination, which searches the whole library — hence "Filter", not
-        // "Search". Hidden on Search, which brings its own field.
-        if (destination != RootDestination.Search) {
-            OutlinedTextField(
-                value = if (destination == RootDestination.Library) localSearchQuery else webSearchQuery,
-                onValueChange = {
-                    if (destination == RootDestination.Library) {
-                        onLocalSearchChange(it)
-                    } else {
-                        onWebSearchChange(it)
+        if (destination == RootDestination.Library) {
+            Box {
+                IconButton(onClick = { onShowSortMenuChange(true) }) {
+                    // Tune, not MoreVert: this opens sort options, and MoreVert
+                    // already means "more options" two buttons along.
+                    Icon(imageVector = Icons.Filled.Tune, contentDescription = "Sort")
+                }
+                SortMenu(
+                    expanded = showSortMenu,
+                    onDismiss = { onShowSortMenuChange(false) },
+                    family = localTab.sortFamily(),
+                    songSortOption = songSortOption,
+                    albumSortOption = albumSortOption,
+                    collectionSortOption = collectionSortOption,
+                    onSongSortChange = onSongSortChange,
+                    onAlbumSortChange = onAlbumSortChange,
+                    onCollectionSortChange = onCollectionSortChange,
+                )
+            }
+        }
+
+        OverflowMenuButton(onOpenSettings = onOpenSettings, onRescan = onRescan)
+    }
+}
+
+/**
+ * The filter, shown only while it is being used.
+ *
+ * Replaces the whole app-bar row rather than appearing under it, so opening the
+ * filter costs no height — which is the point of hiding it in the first place.
+ */
+@Composable
+private fun HeaderSearchField(
+    destination: RootDestination,
+    localTab: LocalCategoryTab,
+    localSearchQuery: String,
+    webSearchQuery: String,
+    onLocalSearchChange: (String) -> Unit,
+    onWebSearchChange: (String) -> Unit,
+    onClose: () -> Unit
+) {
+    val isLibrary = destination == RootDestination.Library
+    val value = if (isLibrary) localSearchQuery else webSearchQuery
+    val focusRequester = remember { FocusRequester() }
+
+    // Opened by a tap, so the keyboard should already be up; otherwise it takes a
+    // second tap on the field that just appeared under the finger.
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(
+            onClick = {
+                if (isLibrary) onLocalSearchChange("") else onWebSearchChange("")
+                onClose()
+            }
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Close filter"
+            )
+        }
+        TextField(
+            value = value,
+            onValueChange = { if (isLibrary) onLocalSearchChange(it) else onWebSearchChange(it) },
+            modifier = Modifier
+                .weight(1f)
+                .focusRequester(focusRequester),
+            singleLine = true,
+            placeholder = {
+                Text(
+                    if (isLibrary) "Filter ${localTab.label().lowercase()}" else "Search the web"
+                )
+            },
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = Color.Transparent,
+                unfocusedContainerColor = Color.Transparent,
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+            ),
+            trailingIcon = {
+                if (value.isNotEmpty()) {
+                    IconButton(
+                        onClick = { if (isLibrary) onLocalSearchChange("") else onWebSearchChange("") }
+                    ) {
+                        Icon(Icons.Filled.Close, contentDescription = "Clear")
                     }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
-                singleLine = true,
-                label = {
-                    Text(
-                        if (destination == RootDestination.Library) {
-                            "Filter ${localTab.label()}"
-                        } else {
-                            "Search the web"
-                        }
-                    )
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun OverflowMenuButton(onOpenSettings: () -> Unit, onRescan: () -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(imageVector = Icons.Filled.MoreVert, contentDescription = "More options")
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("Rescan library") },
+                onClick = {
+                    expanded = false
+                    onRescan()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Settings") },
+                onClick = {
+                    expanded = false
+                    onOpenSettings()
                 }
             )
         }
-
-        HorizontalDivider()
     }
 }
 
