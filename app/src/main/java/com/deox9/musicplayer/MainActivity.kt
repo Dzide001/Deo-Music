@@ -35,12 +35,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -49,9 +53,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -65,6 +70,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -80,6 +86,7 @@ import com.deox9.musicplayer.feature.library.FoldersScreen
 import com.deox9.musicplayer.feature.library.GenresScreen
 import com.deox9.musicplayer.feature.library.LibraryScreen
 import com.deox9.musicplayer.feature.library.PlaylistsScreen
+import com.deox9.musicplayer.feature.library.SearchScreen
 import com.deox9.musicplayer.feature.library.SuggestedScreen
 import com.deox9.musicplayer.feature.player.ExpandedNowPlayingScreen
 import com.deox9.musicplayer.feature.player.MiniPlayerBar
@@ -153,7 +160,25 @@ private fun MainActivity.enableStrictModeInDebug() {
     )
 }
 
-private enum class RootMode { LocalDevice, WebPlayback }
+/**
+ * Top-level destinations.
+ *
+ * Replaces the Local/Web footer, which was a second navigation layer competing with
+ * the category chips. Web exists only in the full flavour — [available] is what keeps
+ * the FOSS build honest about having two destinations rather than three.
+ */
+private enum class RootDestination(
+    val label: String,
+    val selectedIcon: ImageVector,
+    val icon: ImageVector,
+) {
+    Library("Library", Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic),
+    Search("Search", Icons.Filled.Search, Icons.Outlined.Search),
+    Web("Web", Icons.Filled.Language, Icons.Outlined.Language),
+    ;
+
+    val available: Boolean get() = this != Web || WebPlayback.IS_AVAILABLE
+}
 
 private enum class LocalCategoryTab {
     Songs,
@@ -196,7 +221,7 @@ private fun RequestNotificationPermission() {
 @Composable
 private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
     val context = LocalContext.current
-    var mode by rememberSaveable { mutableStateOf(RootMode.LocalDevice) }
+    var destination by rememberSaveable { mutableStateOf(RootDestination.Library) }
     var localTab by rememberSaveable { mutableStateOf(LocalCategoryTab.Songs) }
     var localSearchQuery by rememberSaveable { mutableStateOf("") }
     var appliedLocalSearchQuery by rememberSaveable { mutableStateOf("") }
@@ -224,6 +249,7 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
     val genresListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     val suggestedListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     val favouritesListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+    val searchListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
 
     val playback = viewModel.playback
     val playbackState by playback.state.collectAsState()
@@ -376,7 +402,7 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
                 // which made the Settings button unreachable on-device.
                 Box(modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars)) {
                     AppHeader(
-                        mode = mode,
+                        destination = destination,
                         localTab = localTab,
                         localSearchQuery = localSearchQuery,
                         webSearchQuery = webSearchQuery,
@@ -414,18 +440,21 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
                         onOpenQueue = { showQueueSheet = true }
                     )
                     NavigationBar {
-                        NavigationBarItem(
-                            selected = mode == RootMode.LocalDevice,
-                            onClick = { mode = RootMode.LocalDevice },
-                            label = { Text("Local/Device") },
-                            icon = {}
-                        )
-                        if (WebPlayback.IS_AVAILABLE) {
+                        RootDestination.entries.filter { it.available }.forEach { item ->
+                            val selected = destination == item
                             NavigationBarItem(
-                                selected = mode == RootMode.WebPlayback,
-                                onClick = { mode = RootMode.WebPlayback },
-                                label = { Text("Web") },
-                                icon = {}
+                                selected = selected,
+                                onClick = { destination = item },
+                                label = { Text(item.label) },
+                                icon = {
+                                    Icon(
+                                        // Filled when selected, outlined otherwise —
+                                        // the Material convention, and a second cue
+                                        // beyond colour for anyone who cannot rely on it.
+                                        imageVector = if (selected) item.selectedIcon else item.icon,
+                                        contentDescription = null,
+                                    )
+                                },
                             )
                         }
                     }
@@ -442,7 +471,7 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
                 },
                 onOpenQueue = { showQueueSheet = true },
                 onGoToArtist = { artistName ->
-                    mode = RootMode.LocalDevice
+                    destination = RootDestination.Library
                     localTab = LocalCategoryTab.Songs
                     localSearchQuery = artistName
                     appliedLocalSearchQuery = artistName
@@ -450,7 +479,7 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
                     suppressAutoExpand = true
                 },
                 onViewAlbum = { albumName ->
-                    mode = RootMode.LocalDevice
+                    destination = RootDestination.Library
                     localTab = LocalCategoryTab.Albums
                     localSearchQuery = albumName
                     appliedLocalSearchQuery = albumName
@@ -465,14 +494,20 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
                     .padding(innerPadding)
             ) {
                 if (WebPlayback.IS_AVAILABLE) {
+                    // Kept composed across destinations so the page and any playing
+                    // media survive switching away and back.
                     WebPlayback.Screen(
                         searchQuery = webSearchQuery,
-                        isVisible = mode == RootMode.WebPlayback,
+                        isVisible = destination == RootDestination.Web,
                         onWebViewReady = { webPlaybackView = it }
                     )
                 }
 
-                if (mode == RootMode.LocalDevice) {
+                if (destination == RootDestination.Search) {
+                    SearchScreen(listState = searchListState)
+                }
+
+                if (destination == RootDestination.Library) {
                     Column(modifier = Modifier.fillMaxSize()) {
                         LocalCategoryTabs(
                             selected = localTab,
@@ -552,7 +587,7 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
 
 @Composable
 private fun AppHeader(
-    mode: RootMode,
+    destination: RootDestination,
     localTab: LocalCategoryTab,
     localSearchQuery: String,
     webSearchQuery: String,
@@ -598,66 +633,21 @@ private fun AppHeader(
                     contentDescription = "Sort and filter"
                 )
             }
-            DropdownMenu(
+            SortMenu(
                 expanded = showSortMenu,
-                onDismissRequest = { onShowSortMenuChange(false) }
-            ) {
-                if (mode == RootMode.LocalDevice && localTab == LocalCategoryTab.Songs) {
-                    SongSortOption.entries.forEach { option ->
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    if (songSortOption == option) "✓ ${option.label()}" else option.label()
-                                )
-                            },
-                            onClick = { onSongSortChange(option) }
-                        )
-                    }
-                } else if (mode == RootMode.LocalDevice && localTab == LocalCategoryTab.Albums) {
-                    AlbumSortOption.entries.forEach { option ->
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    if (albumSortOption == option) "✓ ${option.label()}" else option.label()
-                                )
-                            },
-                            onClick = { onAlbumSortChange(option) }
-                        )
-                    }
-                } else if (
-                    mode == RootMode.LocalDevice &&
-                    (localTab == LocalCategoryTab.Playlists ||
-                        localTab == LocalCategoryTab.Folders ||
-                        localTab == LocalCategoryTab.Genres)
-                ) {
-                    CollectionSortOption.entries.forEach { option ->
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    if (collectionSortOption == option) "✓ ${option.label()}" else option.label()
-                                )
-                            },
-                            onClick = { onCollectionSortChange(option) }
-                        )
-                    }
-                } else if (mode == RootMode.LocalDevice && localTab == LocalCategoryTab.Favourites) {
-                    SongSortOption.entries.forEach { option ->
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    if (songSortOption == option) "✓ ${option.label()}" else option.label()
-                                )
-                            },
-                            onClick = { onSongSortChange(option) }
-                        )
-                    }
+                onDismiss = { onShowSortMenuChange(false) },
+                family = if (destination == RootDestination.Library) {
+                    localTab.sortFamily()
                 } else {
-                    DropdownMenuItem(
-                        text = { Text("Sort options are not available for this tab yet") },
-                        onClick = { onShowSortMenuChange(false) }
-                    )
-                }
-            }
+                    SortFamily.None
+                },
+                songSortOption = songSortOption,
+                albumSortOption = albumSortOption,
+                collectionSortOption = collectionSortOption,
+                onSongSortChange = onSongSortChange,
+                onAlbumSortChange = onAlbumSortChange,
+                onCollectionSortChange = onCollectionSortChange,
+            )
 
             IconButton(onClick = onOpenSettings) {
                 Icon(
@@ -667,29 +657,34 @@ private fun AppHeader(
             }
         }
 
-        OutlinedTextField(
-            value = if (mode == RootMode.LocalDevice) localSearchQuery else webSearchQuery,
-            onValueChange = {
-                if (mode == RootMode.LocalDevice) {
-                    onLocalSearchChange(it)
-                } else {
-                    onWebSearchChange(it)
-                }
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 4.dp),
-            singleLine = true,
-            label = {
-                Text(
-                    if (mode == RootMode.LocalDevice) {
-                        "Search ${localTab.label()}"
+        // Narrows the list you are looking at. Distinct from the Search
+        // destination, which searches the whole library — hence "Filter", not
+        // "Search". Hidden on Search, which brings its own field.
+        if (destination != RootDestination.Search) {
+            OutlinedTextField(
+                value = if (destination == RootDestination.Library) localSearchQuery else webSearchQuery,
+                onValueChange = {
+                    if (destination == RootDestination.Library) {
+                        onLocalSearchChange(it)
                     } else {
-                        "Search Web"
+                        onWebSearchChange(it)
                     }
-                )
-            }
-        )
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                singleLine = true,
+                label = {
+                    Text(
+                        if (destination == RootDestination.Library) {
+                            "Filter ${localTab.label()}"
+                        } else {
+                            "Search the web"
+                        }
+                    )
+                }
+            )
+        }
 
         HorizontalDivider()
     }
@@ -758,32 +753,32 @@ private fun DebugPerformanceOverlay(modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * Category filter inside Library.
+ *
+ * A real tab row rather than a row of outlined buttons: the buttons gave no indicator
+ * beyond a bullet glyph prefixed to the label, and a scrolling row of them read as
+ * primary navigation when it is a filter. The scrollable variant keeps every category
+ * reachable without the seven-chip horizontal scroller hiding half of them.
+ */
 @Composable
 private fun LocalCategoryTabs(
     selected: LocalCategoryTab,
     onSelect: (LocalCategoryTab) -> Unit
 ) {
-    LazyRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    PrimaryScrollableTabRow(
+        selectedTabIndex = LocalCategoryTab.entries.indexOf(selected),
+        edgePadding = 12.dp,
+        divider = { HorizontalDivider() },
     ) {
-        items(LocalCategoryTab.entries) { tab ->
-            OutlinedButton(
-                onClick = { onSelect(tab) }
-            ) {
-                Text(
-                    text = if (selected == tab) {
-                        "• ${tab.label()}"
-                    } else {
-                        tab.label()
-                    }
-                )
-            }
+        LocalCategoryTab.entries.forEach { tab ->
+            Tab(
+                selected = selected == tab,
+                onClick = { onSelect(tab) },
+                text = { Text(tab.label()) },
+            )
         }
     }
-    HorizontalDivider()
 }
 
 private fun LocalCategoryTab.label(): String = when (this) {
@@ -794,4 +789,65 @@ private fun LocalCategoryTab.label(): String = when (this) {
     LocalCategoryTab.Genres -> "Genres"
     LocalCategoryTab.Suggested -> "Suggested"
     LocalCategoryTab.Favourites -> "Favourites"
+}
+
+/** Which family of sort options a library tab offers, if any. */
+private enum class SortFamily { Song, Album, Collection, None }
+
+/**
+ * Maps a tab to its sort options.
+ *
+ * Replaces a chain of `destination == Library && tab == X` conditions in the header,
+ * one of which had grown complex enough for detekt to flag it. Exhaustive on the enum,
+ * so adding a tab is a compile error here rather than a silent "no sort options".
+ */
+private fun LocalCategoryTab.sortFamily(): SortFamily = when (this) {
+    LocalCategoryTab.Songs, LocalCategoryTab.Favourites -> SortFamily.Song
+    LocalCategoryTab.Albums -> SortFamily.Album
+    LocalCategoryTab.Playlists,
+    LocalCategoryTab.Folders,
+    LocalCategoryTab.Genres -> SortFamily.Collection
+    LocalCategoryTab.Suggested -> SortFamily.None
+}
+
+@Composable
+private fun SortMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    family: SortFamily,
+    songSortOption: SongSortOption,
+    albumSortOption: AlbumSortOption,
+    collectionSortOption: CollectionSortOption,
+    onSongSortChange: (SongSortOption) -> Unit,
+    onAlbumSortChange: (AlbumSortOption) -> Unit,
+    onCollectionSortChange: (CollectionSortOption) -> Unit,
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        when (family) {
+            SortFamily.Song -> SortOptions(SongSortOption.entries, songSortOption, onSongSortChange) { it.label() }
+            SortFamily.Album -> SortOptions(AlbumSortOption.entries, albumSortOption, onAlbumSortChange) { it.label() }
+            SortFamily.Collection ->
+                SortOptions(CollectionSortOption.entries, collectionSortOption, onCollectionSortChange) { it.label() }
+            SortFamily.None -> DropdownMenuItem(
+                text = { Text("This tab has no sort options") },
+                onClick = onDismiss,
+            )
+        }
+    }
+}
+
+/** One checkable row per option, so every sort family renders identically. */
+@Composable
+private fun <T> SortOptions(
+    options: List<T>,
+    selected: T,
+    onSelect: (T) -> Unit,
+    label: (T) -> String,
+) {
+    options.forEach { option ->
+        DropdownMenuItem(
+            text = { Text(if (option == selected) "\u2713 ${label(option)}" else label(option)) },
+            onClick = { onSelect(option) },
+        )
+    }
 }

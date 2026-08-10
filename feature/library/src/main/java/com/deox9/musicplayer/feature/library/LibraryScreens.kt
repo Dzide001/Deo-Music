@@ -38,6 +38,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -49,6 +50,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,6 +73,7 @@ import com.deox9.musicplayer.ui.CollectionSortOption
 import com.deox9.musicplayer.ui.SongSortOption
 import com.deox9.musicplayer.ui.formatDuration
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -1126,3 +1129,111 @@ private fun AlbumDetailScreen(
         }
     }
 }
+
+/**
+ * Global search across the library.
+ *
+ * Its own destination rather than a field in the app bar, because the header field
+ * only ever searched the tab you happened to be on — "Search Albums" could not find
+ * a track. Tracks come from the FTS index; albums are filtered on the already-loaded
+ * list, which is cheap and keeps one query path rather than two.
+ */
+@Composable
+fun SearchScreen(
+    viewModel: LibraryViewModel = hiltViewModel(),
+    listState: LazyListState,
+) {
+    val playback = viewModel.playback
+    val favourites by viewModel.favourites.collectAsState()
+    val albums by viewModel.albums.collectAsState()
+
+    var query by rememberSaveable { mutableStateOf("") }
+    var trackResults by remember { mutableStateOf<List<LocalTrack>>(emptyList()) }
+
+    // Debounced so a query does not hit FTS on every keystroke.
+    LaunchedEffect(query) {
+        if (query.isBlank()) {
+            trackResults = emptyList()
+            return@LaunchedEffect
+        }
+        delay(SEARCH_DEBOUNCE_MS)
+        trackResults = viewModel.searchTracks(query)
+    }
+
+    val albumResults = remember(albums, query) {
+        if (query.isBlank()) {
+            emptyList()
+        } else {
+            val term = query.trim().lowercase()
+            albums.filter { it.title.lowercase().contains(term) || it.artist.lowercase().contains(term) }
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            singleLine = true,
+            label = { Text("Search your library") },
+        )
+
+        if (query.isBlank()) {
+            Box(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "Search tracks, albums and artists.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            return@Column
+        }
+
+        if (trackResults.isEmpty() && albumResults.isEmpty()) {
+            Box(modifier = Modifier.padding(16.dp)) {
+                Text("Nothing matches “$query”.")
+            }
+            return@Column
+        }
+
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+            if (albumResults.isNotEmpty()) {
+                item(key = "albums-header") {
+                    SearchSectionHeader("Albums", albumResults.size)
+                }
+                items(albumResults, key = { "album-${it.id}" }) { album ->
+                    AlbumCard(album = album, onClick = { })
+                }
+            }
+            if (trackResults.isNotEmpty()) {
+                item(key = "tracks-header") {
+                    SearchSectionHeader("Tracks", trackResults.size)
+                }
+                items(trackResults, key = { "track-${it.id}" }) { track ->
+                    LocalTrackRow(
+                        track = track,
+                        isFavourite = track.contentUri in favourites,
+                        onToggleFavourite = { viewModel.toggleFavourite(track.contentUri) },
+                        onClick = { playback.playNow(track.contentUri, track.title, track.artist) },
+                        onPlayNext = { playback.playNext(track.contentUri, track.title, track.artist) },
+                        onAddToQueue = { playback.addToQueue(track.contentUri, track.title, track.artist) },
+                    )
+                    HorizontalDivider()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchSectionHeader(title: String, count: Int) {
+    Text(
+        text = "$title · $count",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp),
+    )
+}
+
+private const val SEARCH_DEBOUNCE_MS = 220L
