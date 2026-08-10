@@ -475,7 +475,9 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
                 onOpenQueue = { showQueueSheet = true },
                 onGoToArtist = { artistName ->
                     destination = RootDestination.Library
-                    localTab = LocalCategoryTab.Songs
+                    // The Artists tab exists now, so "go to artist" lands on the
+                    // artist rather than on a song list filtered by their name.
+                    localTab = LocalCategoryTab.Artists
                     localSearchQuery = artistName
                     appliedLocalSearchQuery = artistName
                     showNowPlaying = false
