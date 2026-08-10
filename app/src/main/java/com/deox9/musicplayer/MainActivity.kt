@@ -81,6 +81,7 @@ import com.deox9.musicplayer.designsystem.DeoTheme
 import com.deox9.musicplayer.designsystem.ThemeConfig
 import com.deox9.musicplayer.designsystem.themeModeFrom
 import com.deox9.musicplayer.feature.library.AlbumsScreen
+import com.deox9.musicplayer.feature.library.ArtistsScreen
 import com.deox9.musicplayer.feature.library.FavouritesScreen
 import com.deox9.musicplayer.feature.library.FoldersScreen
 import com.deox9.musicplayer.feature.library.GenresScreen
@@ -183,6 +184,7 @@ private enum class RootDestination(
 private enum class LocalCategoryTab {
     Songs,
     Albums,
+    Artists,
     Playlists,
     Folders,
     Genres,
@@ -244,6 +246,7 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
 
     val songsListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     val albumsListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+    val artistsListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     val playlistsListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     val foldersListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     val genresListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
@@ -525,6 +528,11 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
                                     sortOption = albumSortOption,
                                     listState = albumsListState
                                 )
+                                LocalCategoryTab.Artists -> ArtistsScreen(
+                                    searchQuery = appliedLocalSearchQuery,
+                                    sortOption = collectionSortOption,
+                                    listState = artistsListState
+                                )
                                 LocalCategoryTab.Playlists -> PlaylistsScreen(
                                     searchQuery = appliedLocalSearchQuery,
                                     sortOption = collectionSortOption,
@@ -784,6 +792,7 @@ private fun LocalCategoryTabs(
 private fun LocalCategoryTab.label(): String = when (this) {
     LocalCategoryTab.Songs -> "Songs"
     LocalCategoryTab.Albums -> "Albums"
+    LocalCategoryTab.Artists -> "Artists"
     LocalCategoryTab.Playlists -> "Playlists"
     LocalCategoryTab.Folders -> "Folders"
     LocalCategoryTab.Genres -> "Genres"
@@ -804,6 +813,7 @@ private enum class SortFamily { Song, Album, Collection, None }
 private fun LocalCategoryTab.sortFamily(): SortFamily = when (this) {
     LocalCategoryTab.Songs, LocalCategoryTab.Favourites -> SortFamily.Song
     LocalCategoryTab.Albums -> SortFamily.Album
+    LocalCategoryTab.Artists,
     LocalCategoryTab.Playlists,
     LocalCategoryTab.Folders,
     LocalCategoryTab.Genres -> SortFamily.Collection

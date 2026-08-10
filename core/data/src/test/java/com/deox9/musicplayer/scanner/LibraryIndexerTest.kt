@@ -54,10 +54,11 @@ class LibraryIndexerTest {
         genre: String? = null,
         folder: String? = null,
         year: Int? = null,
+        albumSourceId: Long? = null,
     ) = ScannedTrack(
         mediaUri = uri,
         sourceId = null,
-        albumSourceId = null,
+        albumSourceId = albumSourceId,
         title = title,
         artist = artist,
         albumArtist = albumArtist,
@@ -219,5 +220,24 @@ class LibraryIndexerTest {
         )
 
         assertEquals(1975, dao.observeAlbums().first().single().year)
+    }
+
+    /**
+     * Modern MediaStore album ids are 64-bit hashes. Carrying one through as an Int
+     * truncates it into an id the albumart provider does not know, which showed up
+     * as every album rendering a placeholder rather than as an error anywhere.
+     */
+    @Test
+    fun `a 64-bit MediaStore album id survives indexing`() = runTest {
+        val hashedId = 351_612_700_793_126_060L
+        assertTrue("test id must exceed Int range", hashedId > Int.MAX_VALUE)
+
+        indexer.index(
+            listOf(
+                scanned("A", "uri://1", artist = "X", album = "Record", albumSourceId = hashedId),
+            ),
+        )
+
+        assertEquals(hashedId, dao.observeAlbums().first().single().mediaStoreAlbumId)
     }
 }

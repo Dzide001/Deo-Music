@@ -4,6 +4,7 @@ package com.deox9.musicplayer.feature.library
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.deox9.musicplayer.library.Album
+import com.deox9.musicplayer.library.ArtistInfo
 import com.deox9.musicplayer.library.FavouritesRepository
 import com.deox9.musicplayer.library.FolderInfo
 import com.deox9.musicplayer.library.GenreInfo
@@ -67,6 +68,9 @@ class LibraryViewModel @Inject constructor(
     val albums: StateFlow<List<Album>> = libraryRepository.observeAlbums()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
 
+    val artists: StateFlow<List<ArtistInfo>> = libraryRepository.observeArtists()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
+
     val genres: StateFlow<List<GenreInfo>> = libraryRepository.observeGenres()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
 
@@ -77,6 +81,9 @@ class LibraryViewModel @Inject constructor(
 
     suspend fun tracksByAlbum(albumId: Long): List<LocalTrack> =
         libraryRepository.tracksByAlbum(albumId)
+
+    suspend fun tracksByArtist(artistId: Long): List<LocalTrack> =
+        libraryRepository.tracksByArtist(artistId)
 
     suspend fun searchTracks(query: String): List<LocalTrack> = libraryRepository.search(query)
 

@@ -39,6 +39,18 @@ class RoomLibraryRepository @Inject constructor(
             }
         }
 
+    fun observeArtists(): Flow<List<ArtistInfo>> =
+        dao.observeArtistCounts().map { rows ->
+            rows.map {
+                ArtistInfo(
+                    id = it.id,
+                    name = it.name,
+                    trackCount = it.trackCount,
+                    albumCount = it.albumCount,
+                )
+            }
+        }
+
     fun observeGenres(): Flow<List<GenreInfo>> =
         dao.observeGenreCounts().map { rows ->
             rows.map { GenreInfo(id = it.id, name = it.name, trackCount = it.trackCount) }
@@ -57,6 +69,9 @@ class RoomLibraryRepository @Inject constructor(
 
     suspend fun tracksByAlbum(albumId: Long): List<LocalTrack> =
         dao.albumTracksWithNames(albumId).map(TrackWithNames::toLocalTrack)
+
+    suspend fun tracksByArtist(artistId: Long): List<LocalTrack> =
+        dao.artistTracksWithNames(artistId).map(TrackWithNames::toLocalTrack)
 
     /**
      * Full-text search.
@@ -118,4 +133,5 @@ private fun TrackWithNames.toLocalTrack(): LocalTrack = LocalTrack(
     album = albumTitle.orEmpty(),
     durationMs = durationMs,
     contentUri = mediaUri,
+    artworkUri = albumMediaStoreId?.let { AlbumArt.forAlbumId(it).toString() },
 )

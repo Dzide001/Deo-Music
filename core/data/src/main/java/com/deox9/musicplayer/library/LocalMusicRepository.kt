@@ -55,6 +55,7 @@ class LocalMusicRepository(
             MediaStore.Audio.Media.TITLE,
             MediaStore.Audio.Media.ARTIST,
             MediaStore.Audio.Media.ALBUM,
+            MediaStore.Audio.Media.ALBUM_ID,
             MediaStore.Audio.Media.DURATION
         )
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
@@ -71,6 +72,7 @@ class LocalMusicRepository(
             val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
             val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
             val albumCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+            val albumIdCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
             val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
 
             while (cursor.moveToNext() && tracks.size < limit) {
@@ -78,6 +80,8 @@ class LocalMusicRepository(
                 val title = cursor.getString(titleCol).orEmpty()
                 val artist = cursor.getString(artistCol).orEmpty()
                 val album = cursor.getString(albumCol).orEmpty()
+                val albumArt = cursor.getLong(albumIdCol).takeIf { it != 0L }
+                    ?.let { AlbumArt.forAlbumId(it).toString() }
                 val duration = cursor.getLong(durationCol)
                 val contentUri = ContentUris.withAppendedId(collection, id).toString()
 
@@ -87,7 +91,8 @@ class LocalMusicRepository(
                     artist = artist,
                     album = album,
                     durationMs = duration,
-                    contentUri = contentUri
+                    contentUri = contentUri,
+                    artworkUri = albumArt
                 )
             }
         }
@@ -182,6 +187,7 @@ class LocalMusicRepository(
             MediaStore.Audio.Media.TITLE,
             MediaStore.Audio.Media.ARTIST,
             MediaStore.Audio.Media.ALBUM,
+            MediaStore.Audio.Media.ALBUM_ID,
             MediaStore.Audio.Media.DURATION,
             MediaStore.Audio.Media.ALBUM_ID
         )
@@ -200,6 +206,7 @@ class LocalMusicRepository(
             val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
             val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
             val albumCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+            val albumIdCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
             val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
 
             while (cursor.moveToNext()) {
@@ -207,6 +214,8 @@ class LocalMusicRepository(
                 val title = cursor.getString(titleCol).orEmpty()
                 val artist = cursor.getString(artistCol).orEmpty()
                 val album = cursor.getString(albumCol).orEmpty()
+                val albumArt = cursor.getLong(albumIdCol).takeIf { it != 0L }
+                    ?.let { AlbumArt.forAlbumId(it).toString() }
                 val duration = cursor.getLong(durationCol)
                 val contentUri = ContentUris.withAppendedId(collection, id).toString()
 
@@ -216,7 +225,8 @@ class LocalMusicRepository(
                     artist = artist,
                     album = album,
                     durationMs = duration,
-                    contentUri = contentUri
+                    contentUri = contentUri,
+                    artworkUri = albumArt
                 )
             }
         }
@@ -265,6 +275,7 @@ class LocalMusicRepository(
             MediaStore.Audio.Playlists.Members.TITLE,
             MediaStore.Audio.Playlists.Members.ARTIST,
             MediaStore.Audio.Playlists.Members.ALBUM,
+            MediaStore.Audio.Playlists.Members.ALBUM_ID,
             MediaStore.Audio.Playlists.Members.DURATION
         )
 
@@ -279,6 +290,7 @@ class LocalMusicRepository(
             val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Playlists.Members.TITLE)
             val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Playlists.Members.ARTIST)
             val albumCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Playlists.Members.ALBUM)
+            val albumIdCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Playlists.Members.ALBUM_ID)
             val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Playlists.Members.DURATION)
 
             while (cursor.moveToNext()) {
@@ -286,6 +298,8 @@ class LocalMusicRepository(
                 val title = cursor.getString(titleCol).orEmpty()
                 val artist = cursor.getString(artistCol).orEmpty()
                 val album = cursor.getString(albumCol).orEmpty()
+                val albumArt = cursor.getLong(albumIdCol).takeIf { it != 0L }
+                    ?.let { AlbumArt.forAlbumId(it).toString() }
                 val duration = cursor.getLong(durationCol)
                 val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id).toString()
 
@@ -295,7 +309,8 @@ class LocalMusicRepository(
                     artist = artist,
                     album = album,
                     durationMs = duration,
-                    contentUri = contentUri
+                    contentUri = contentUri,
+                    artworkUri = albumArt
                 )
             }
         }
@@ -344,6 +359,7 @@ class LocalMusicRepository(
             MediaStore.Audio.Genres.Members.TITLE,
             MediaStore.Audio.Genres.Members.ARTIST,
             MediaStore.Audio.Genres.Members.ALBUM,
+            MediaStore.Audio.Genres.Members.ALBUM_ID,
             MediaStore.Audio.Genres.Members.DURATION
         )
 
@@ -358,6 +374,7 @@ class LocalMusicRepository(
             val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Genres.Members.TITLE)
             val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Genres.Members.ARTIST)
             val albumCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Genres.Members.ALBUM)
+            val albumIdCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Genres.Members.ALBUM_ID)
             val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Genres.Members.DURATION)
 
             while (cursor.moveToNext()) {
@@ -365,6 +382,8 @@ class LocalMusicRepository(
                 val title = cursor.getString(titleCol).orEmpty()
                 val artist = cursor.getString(artistCol).orEmpty()
                 val album = cursor.getString(albumCol).orEmpty()
+                val albumArt = cursor.getLong(albumIdCol).takeIf { it != 0L }
+                    ?.let { AlbumArt.forAlbumId(it).toString() }
                 val duration = cursor.getLong(durationCol)
                 val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id).toString()
 
@@ -374,7 +393,8 @@ class LocalMusicRepository(
                     artist = artist,
                     album = album,
                     durationMs = duration,
-                    contentUri = contentUri
+                    contentUri = contentUri,
+                    artworkUri = albumArt
                 )
             }
         }

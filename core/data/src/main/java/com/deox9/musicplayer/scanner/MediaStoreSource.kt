@@ -93,7 +93,11 @@ class MediaStoreSource @Inject constructor(
                     .withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, rowId)
                     .toString(),
                 sourceId = rowId,
-                albumSourceId = cursor.optInt(albumSourceId)?.toLong(),
+                // Read as a Long, not an Int widened afterwards. Modern MediaStore
+                // album ids are 64-bit hashes — 351612700793126060 on this device —
+                // and getInt truncates them to a value the albumart provider has
+                // never heard of, so every album silently rendered a placeholder.
+                albumSourceId = cursor.optLong(albumSourceId),
                 title = cursor.getString(title).orEmpty(),
                 artist = cursor.getString(artist)?.takeUnless { it == MediaStore.UNKNOWN_STRING },
                 albumArtist = cursor.optString(albumArtist)
@@ -126,6 +130,9 @@ class MediaStoreSource @Inject constructor(
 
         private fun Cursor.optInt(index: Int): Int? =
             if (index >= 0 && !isNull(index)) getInt(index) else null
+
+        private fun Cursor.optLong(index: Int): Long? =
+            if (index >= 0 && !isNull(index)) getLong(index) else null
     }
 
     private companion object {

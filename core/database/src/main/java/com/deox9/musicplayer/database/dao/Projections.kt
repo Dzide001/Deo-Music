@@ -20,6 +20,12 @@ data class TrackWithNames(
     val folderPath: String?,
     val genreName: String?,
     val dateAddedMs: Long,
+    /**
+     * The album's MediaStore id, carried so a row can resolve its own artwork
+     * without a second query per track — which is the N+1 this projection exists
+     * to avoid.
+     */
+    val albumMediaStoreId: Long?,
 )
 
 data class AlbumWithArtist(
@@ -38,4 +44,11 @@ data class NamedCount(
     val id: Long,
     val name: String,
     val trackCount: Int,
+)
+
+data class ArtistWithCounts(
+    val id: Long,
+    val name: String,
+    val trackCount: Int,
+    val albumCount: Int,
 )

@@ -12,8 +12,10 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,9 +25,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -54,14 +57,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import coil3.compose.AsyncImage
 import com.deox9.musicplayer.library.Album
 import com.deox9.musicplayer.library.FolderInfo
 import com.deox9.musicplayer.library.GenreInfo
@@ -71,7 +72,9 @@ import com.deox9.musicplayer.scanner.LibraryScanWorker
 import com.deox9.musicplayer.ui.AlbumSortOption
 import com.deox9.musicplayer.ui.CollectionSortOption
 import com.deox9.musicplayer.ui.SongSortOption
+import com.deox9.musicplayer.ui.buildAlphabetIndex
 import com.deox9.musicplayer.ui.formatDuration
+import com.deox9.musicplayer.ui.shouldShowFastScroll
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -644,11 +647,12 @@ private fun FolderDetailScreen(
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun CollectionTrackListScreen(
+internal fun CollectionTrackListScreen(
     viewModel: LibraryViewModel = hiltViewModel(),
     title: String,
     tracks: List<LocalTrack>,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    subtitle: String? = null,
 ) {
     val context = LocalContext.current
     val playback = viewModel.playback
@@ -657,7 +661,23 @@ private fun CollectionTrackListScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text(title) },
+            // These detail screens open inside the tab content area, not at the top
+            // of the window, so the bar must not re-apply the status-bar inset the
+            // scaffold has already consumed — doing so left a band of empty space
+            // above the title.
+            windowInsets = WindowInsets(0),
+            title = {
+                Column {
+                    Text(title, maxLines = 1)
+                    if (subtitle != null) {
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            },
             navigationIcon = {
                 IconButton(onClick = onBack) {
                     Icon(
@@ -787,28 +807,47 @@ fun LibraryScreen(
         return
     }
 
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize()
-    ) {
-        items(filteredTracks, key = { it.id }) { track ->
-            LocalTrackRow(
-                track = track,
-                isFavourite = track.contentUri in favourites,
-                onToggleFavourite = {
-                    viewModel.toggleFavourite(track.contentUri)
-                },
-                onClick = {
-                    playback.playNow(track.contentUri, track.title, track.artist)
-                },
-                onPlayNext = {
-                    playback.playNext(track.contentUri, track.title, track.artist)
-                },
-                onAddToQueue = {
-                    playback.addToQueue(track.contentUri, track.title, track.artist)
-                }
+    // Buckets are built from the same list the rail scrolls, so a filtered list gets
+    // a filtered rail rather than one pointing at indices that no longer exist.
+    val buckets = remember(filteredTracks) { buildAlphabetIndex(filteredTracks.map { it.title }) }
+    val showRail = shouldShowFastScroll(filteredTracks.size, sortOption == SongSortOption.Title)
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            // Rows end before the rail rather than sliding underneath it.
+            contentPadding = PaddingValues(end = if (showRail) FastScrollGutter else 0.dp)
+        ) {
+            items(filteredTracks, key = { it.id }) { track ->
+                LocalTrackRow(
+                    track = track,
+                    isFavourite = track.contentUri in favourites,
+                    onToggleFavourite = {
+                        viewModel.toggleFavourite(track.contentUri)
+                    },
+                    onClick = {
+                        playback.playNow(track.contentUri, track.title, track.artist)
+                    },
+                    onPlayNext = {
+                        playback.playNext(track.contentUri, track.title, track.artist)
+                    },
+                    onAddToQueue = {
+                        playback.addToQueue(track.contentUri, track.title, track.artist)
+                    }
+                )
+                HorizontalDivider()
+            }
+        }
+
+        if (showRail) {
+            FastScrollRail(
+                buckets = buckets,
+                listState = listState,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(vertical = 12.dp)
             )
-            HorizontalDivider()
         }
     }
 }
@@ -834,95 +873,142 @@ private fun LocalTrackRow(
                 onLongClick = { showContextMenu = true },
                 onDoubleClick = { onToggleFavourite?.invoke() }
             )
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
+        TrackArtwork(
+            artworkUri = track.artworkUri,
+            // The row already announces the title; naming the art again would make
+            // every row read twice.
+            contentDescription = null
+        )
+        Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = track.title,
                 style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = "${track.artist} • ${track.album}",
-                style = MaterialTheme.typography.bodySmall
+                text = trackSubtitle(track),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
-        Spacer(modifier = Modifier.width(12.dp))
-        Text(
-            text = formatDuration(track.durationMs),
-            style = MaterialTheme.typography.labelMedium
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        if (onToggleFavourite != null) {
-            TextButton(onClick = onToggleFavourite) {
-                Text(if (isFavourite) "★" else "☆")
-            }
+        // A marker, not a button. The row is 360dp wide on this phone and the old
+        // trailing stack — duration, a star button, a "Queue" text button — left
+        // about 100dp for the title, so every row ellipsised after a few characters.
+        // Both actions survive: double-tap still toggles the favourite and the
+        // overflow menu carries the queue, which is where the width went.
+        if (isFavourite) {
+            Icon(
+                imageVector = Icons.Filled.Star,
+                contentDescription = "Favourite",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
         }
-        TextButton(onClick = onAddToQueue) {
-            Text("Queue")
+        IconButton(onClick = { showContextMenu = true }) {
+            Icon(
+                imageVector = Icons.Filled.MoreVert,
+                contentDescription = "More actions for ${track.title}",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
-        DropdownMenu(
+        TrackContextMenu(
             expanded = showContextMenu,
-            onDismissRequest = { showContextMenu = false }
-        ) {
-            DropdownMenuItem(
-                text = { Text("Play next") },
-                onClick = {
-                    onPlayNext?.invoke() ?: onAddToQueue()
-                    showContextMenu = false
-                }
-            )
-            DropdownMenuItem(
-                text = { Text("Add to queue") },
-                onClick = {
-                    onAddToQueue()
-                    showContextMenu = false
-                }
-            )
-            DropdownMenuItem(
-                text = { Text(if (isFavourite) "Remove favourite" else "Add to favourite") },
-                onClick = {
-                    onToggleFavourite?.invoke()
-                    showContextMenu = false
-                },
-                enabled = onToggleFavourite != null
-            )
-            DropdownMenuItem(
-                text = { Text("View details") },
-                onClick = {
-                    showDetails = true
-                    showContextMenu = false
-                }
-            )
-            DropdownMenuItem(
-                text = { Text("Delete") },
-                onClick = { showContextMenu = false },
-                enabled = false
-            )
-        }
+            isFavourite = isFavourite,
+            onDismiss = { showContextMenu = false },
+            onPlayNext = { onPlayNext?.invoke() ?: onAddToQueue() },
+            onAddToQueue = onAddToQueue,
+            onToggleFavourite = onToggleFavourite,
+            onViewDetails = { showDetails = true }
+        )
 
         if (showDetails) {
-            AlertDialog(
-                onDismissRequest = { showDetails = false },
-                confirmButton = {
-                    TextButton(onClick = { showDetails = false }) {
-                        Text("Close")
-                    }
-                },
-                title = { Text("Track details") },
-                text = {
-                    Text(
-                        "Title: ${track.title}\n" +
-                            "Artist: ${track.artist}\n" +
-                            "Album: ${track.album}\n" +
-                            "Duration: ${formatDuration(track.durationMs)}"
-                    )
-                }
-            )
+            TrackDetailsDialog(track = track, onDismiss = { showDetails = false })
         }
     }
+}
+
+/**
+ * The row's long-press and overflow menu.
+ *
+ * Split out of the row so both entry points share one definition, and because the
+ * row was long enough that adding the overflow button pushed it past detekt's limit.
+ */
+@Composable
+private fun TrackContextMenu(
+    expanded: Boolean,
+    isFavourite: Boolean,
+    onDismiss: () -> Unit,
+    onPlayNext: () -> Unit,
+    onAddToQueue: () -> Unit,
+    onToggleFavourite: (() -> Unit)?,
+    onViewDetails: () -> Unit
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        DropdownMenuItem(
+            text = { Text("Play next") },
+            onClick = {
+                onPlayNext()
+                onDismiss()
+            }
+        )
+        DropdownMenuItem(
+            text = { Text("Add to queue") },
+            onClick = {
+                onAddToQueue()
+                onDismiss()
+            }
+        )
+        DropdownMenuItem(
+            text = { Text(if (isFavourite) "Remove favourite" else "Add to favourite") },
+            onClick = {
+                onToggleFavourite?.invoke()
+                onDismiss()
+            },
+            enabled = onToggleFavourite != null
+        )
+        DropdownMenuItem(
+            text = { Text("View details") },
+            onClick = {
+                onViewDetails()
+                onDismiss()
+            }
+        )
+        DropdownMenuItem(
+            text = { Text("Delete") },
+            onClick = onDismiss,
+            enabled = false
+        )
+    }
+}
+
+@Composable
+private fun TrackDetailsDialog(track: LocalTrack, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        },
+        title = { Text("Track details") },
+        text = {
+            Text(
+                "Title: ${track.title}\n" +
+                    "Artist: ${track.artist}\n" +
+                    "Album: ${track.album}\n" +
+                    "Duration: ${formatDuration(track.durationMs)}"
+            )
+        }
+    )
 }
 
 @Composable
@@ -1011,14 +1097,30 @@ fun AlbumsScreen(
         return
     }
 
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize()
-    ) {
-        items(filteredAlbums, key = { it.id }) { album ->
-            AlbumCard(
-                album = album,
-                onClick = { selectedAlbum = album }
+    val buckets = remember(filteredAlbums) { buildAlphabetIndex(filteredAlbums.map { it.title }) }
+    val showRail = shouldShowFastScroll(filteredAlbums.size, sortOption == AlbumSortOption.Name)
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(end = if (showRail) FastScrollGutter else 0.dp)
+        ) {
+            items(filteredAlbums, key = { it.id }) { album ->
+                AlbumCard(
+                    album = album,
+                    onClick = { selectedAlbum = album }
+                )
+            }
+        }
+
+        if (showRail) {
+            FastScrollRail(
+                buckets = buckets,
+                listState = listState,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(vertical = 12.dp)
             )
         }
     }
@@ -1034,13 +1136,10 @@ private fun AlbumCard(album: Album, onClick: () -> Unit) {
         colors = CardDefaults.cardColors()
     ) {
         Row(modifier = Modifier.padding(12.dp)) {
-            AsyncImage(
-                model = album.artworkUri,
+            TrackArtwork(
+                artworkUri = album.artworkUri?.toString(),
                 contentDescription = "Album art for ${album.title}",
-                modifier = Modifier
-                    .size(80.dp)
-                    .clip(RoundedCornerShape(4.dp)),
-                contentScale = ContentScale.Crop
+                size = 80.dp
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -1089,6 +1188,7 @@ private fun AlbumDetailScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
+            windowInsets = WindowInsets(0),
             title = { Text(album.title) },
             navigationIcon = {
                 IconButton(onClick = onBack) {
@@ -1225,6 +1325,16 @@ fun SearchScreen(
         }
     }
 }
+
+/**
+ * Artist, and album when there is one.
+ *
+ * The old row interpolated both unconditionally, so an untagged file rendered
+ * "Unknown artist • " with a dangling separator — which is most of a fresh library
+ * before the thorough scan has run.
+ */
+private fun trackSubtitle(track: LocalTrack): String =
+    if (track.album.isBlank()) track.artist else "${track.artist} • ${track.album}"
 
 @Composable
 private fun SearchSectionHeader(title: String, count: Int) {

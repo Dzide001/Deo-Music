@@ -83,7 +83,7 @@ interface LibraryDao {
         SELECT t.id, t.title, t.mediaUri, t.durationMs,
                ar.name AS artistName, al.title AS albumTitle, t.albumId,
                t.trackNumber, t.discNumber, f.path AS folderPath, g.name AS genreName,
-               t.dateAddedMs
+               t.dateAddedMs, al.mediaStoreAlbumId AS albumMediaStoreId
         FROM tracks t
         LEFT JOIN artists ar ON ar.id = t.artistId
         LEFT JOIN albums  al ON al.id = t.albumId
@@ -99,7 +99,7 @@ interface LibraryDao {
         SELECT t.id, t.title, t.mediaUri, t.durationMs,
                ar.name AS artistName, al.title AS albumTitle, t.albumId,
                t.trackNumber, t.discNumber, f.path AS folderPath, g.name AS genreName,
-               t.dateAddedMs
+               t.dateAddedMs, al.mediaStoreAlbumId AS albumMediaStoreId
         FROM tracks t
         LEFT JOIN artists ar ON ar.id = t.artistId
         LEFT JOIN albums  al ON al.id = t.albumId
@@ -124,6 +124,48 @@ interface LibraryDao {
         """,
     )
     fun observeAlbumsWithArtist(): Flow<List<AlbumWithArtist>>
+
+    /**
+     * Artists with what the list needs to render a row.
+     *
+     * The join is on the track's artist, not the album's: an artist with one guest
+     * appearance should still show up, and `albums.albumArtistId` deliberately does
+     * not record those. `COUNT(DISTINCT t.albumId)` therefore counts the albums the
+     * artist appears on, which is what the subtitle claims.
+     *
+     * `HAVING trackCount > 0` drops artists whose tracks were all removed — the rows
+     * survive because tracks null out the reference rather than cascading, and an
+     * artist with no music is not something to show.
+     */
+    @Query(
+        """
+        SELECT ar.id, ar.name, COUNT(t.id) AS trackCount,
+               COUNT(DISTINCT t.albumId) AS albumCount
+        FROM artists ar
+        LEFT JOIN tracks t ON t.artistId = ar.id
+        GROUP BY ar.id
+        HAVING trackCount > 0
+        ORDER BY ar.sortName COLLATE NOCASE ASC
+        """,
+    )
+    fun observeArtistCounts(): Flow<List<ArtistWithCounts>>
+
+    @Query(
+        """
+        SELECT t.id, t.title, t.mediaUri, t.durationMs,
+               ar.name AS artistName, al.title AS albumTitle, t.albumId,
+               t.trackNumber, t.discNumber, f.path AS folderPath, g.name AS genreName,
+               t.dateAddedMs, al.mediaStoreAlbumId AS albumMediaStoreId
+        FROM tracks t
+        LEFT JOIN artists ar ON ar.id = t.artistId
+        LEFT JOIN albums  al ON al.id = t.albumId
+        LEFT JOIN folders f  ON f.id  = t.folderId
+        LEFT JOIN genres  g  ON g.id  = t.genreId
+        WHERE t.artistId = :artistId
+        ORDER BY al.sortTitle COLLATE NOCASE ASC, t.discNumber ASC, t.trackNumber ASC
+        """,
+    )
+    suspend fun artistTracksWithNames(artistId: Long): List<TrackWithNames>
 
     @Query(
         """
@@ -153,7 +195,7 @@ interface LibraryDao {
         SELECT t.id, t.title, t.mediaUri, t.durationMs,
                ar.name AS artistName, al.title AS albumTitle, t.albumId,
                t.trackNumber, t.discNumber, f.path AS folderPath, g.name AS genreName,
-               t.dateAddedMs
+               t.dateAddedMs, al.mediaStoreAlbumId AS albumMediaStoreId
         FROM tracks t
         JOIN tracks_fts ON t.rowid = tracks_fts.rowid
         LEFT JOIN artists ar ON ar.id = t.artistId
@@ -339,7 +381,7 @@ interface LibraryDao {
         SELECT t.id, t.title, t.mediaUri, t.durationMs,
                ar.name AS artistName, al.title AS albumTitle, t.albumId,
                t.trackNumber, t.discNumber, f.path AS folderPath, g.name AS genreName,
-               t.dateAddedMs
+               t.dateAddedMs, al.mediaStoreAlbumId AS albumMediaStoreId
         FROM playlist_entries pe
         JOIN tracks t ON t.id = pe.trackId
         LEFT JOIN artists ar ON ar.id = t.artistId
