@@ -75,7 +75,11 @@ fun MiniPlayerBar(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = hasTrack, onClick = onExpand)
+                    .clickable(
+                        enabled = hasTrack,
+                        onClick = onExpand,
+                        onClickLabel = "Open the player",
+                    )
                     .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

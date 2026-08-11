@@ -37,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -317,8 +318,11 @@ private fun TrackHeadline(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            // A one-line label is about 24dp tall, well under the 48dp minimum, and
+            // "double-tap to activate" does not say what activating does.
             modifier = Modifier
-                .clickable(onClick = onArtistClick)
+                .clickable(onClick = onArtistClick, onClickLabel = "Go to artist")
+                .minimumInteractiveComponentSize()
                 .padding(vertical = 2.dp),
         )
     }

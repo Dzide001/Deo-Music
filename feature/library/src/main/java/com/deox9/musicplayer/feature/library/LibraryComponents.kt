@@ -33,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -142,7 +143,10 @@ internal fun FastScrollRail(
             // Printed labels are thinned to what the rail is tall enough to show.
             // Without this the Column overflows and the tail of the alphabet is
             // clipped rather than dropped, which reads as a rendering bug.
-            val maxLabels = (maxHeight / LABEL_HEIGHT).toInt()
+            // Scaled by the font setting: the labels are text, so at a 200% scale
+            // half as many fit, and a fixed 18dp would have them overlapping.
+            val labelHeight = LABEL_HEIGHT * LocalDensity.current.fontScale
+            val maxLabels = (maxHeight / labelHeight).toInt()
             val shown = sampleBuckets(buckets, maxLabels)
 
             Column(

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
@@ -85,7 +86,9 @@ fun QueueSidebar(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                .clickable(onClick = onDismiss),
+                // Labelled because it is most of the screen: unlabelled, TalkBack
+                // focuses a huge nameless target that dismisses the panel.
+                .clickable(onClick = onDismiss, onClickLabel = "Close queue"),
         )
 
         Surface(
@@ -219,7 +222,9 @@ private fun QueueRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(ROW_HEIGHT)
+            // A minimum, not a fixed height. Two lines of text at a 200% font
+            // scale are taller than 72dp and were clipped by it.
+            .heightIn(min = ROW_HEIGHT)
             .background(
                 if (isDragged) {
                     MaterialTheme.colorScheme.primary.copy(alpha = DRAG_TINT_ALPHA)
@@ -228,7 +233,7 @@ private fun QueueRow(
                 },
             )
             .then(dragModifier)
-            .clickable(onClick = onPlay),
+            .clickable(onClick = onPlay, onClickLabel = "Play"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(

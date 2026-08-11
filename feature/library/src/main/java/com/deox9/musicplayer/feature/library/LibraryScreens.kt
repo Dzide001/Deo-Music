@@ -57,6 +57,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -147,7 +151,7 @@ private fun PlaylistsList(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onSelect(playlist) }
+                    .clickable(onClickLabel = "Open") { onSelect(playlist) }
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
@@ -233,7 +237,7 @@ private fun FoldersList(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onSelect(folder) }
+                    .clickable(onClickLabel = "Open") { onSelect(folder) }
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
@@ -319,7 +323,7 @@ private fun GenresList(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onSelect(genre) }
+                    .clickable(onClickLabel = "Open") { onSelect(genre) }
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
@@ -898,7 +902,9 @@ fun LibraryScreen(
 
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
-private fun LocalTrackRow(
+// internal, not private, so the module's own instrumented test can assert the
+// semantics this row exposes — the one property no static check can confirm.
+internal fun LocalTrackRow(
     track: LocalTrack,
     isFavourite: Boolean = false,
     onToggleFavourite: (() -> Unit)? = null,
@@ -914,9 +920,49 @@ private fun LocalTrackRow(
             .fillMaxWidth()
             .combinedClickable(
                 onClick = onClick,
+                onClickLabel = "Play",
                 onLongClick = { showContextMenu = true },
+                onLongClickLabel = "Show track actions",
                 onDoubleClick = { onToggleFavourite?.invoke() }
             )
+            // Everything the row can do, exposed as named actions.
+            //
+            // The menu is reached by long press and the favourite by double tap.
+            // TalkBack has no double tap to give — its own double tap is a plain
+            // activate — and it announces a long press only as "long press", with no
+            // hint that a menu is behind it. Without these the row's actions are
+            // either unreachable or unguessable.
+            .semantics {
+                customActions = buildList {
+                    add(
+                        CustomAccessibilityAction("Play next") {
+                            onPlayNext?.invoke() ?: onAddToQueue()
+                            true
+                        },
+                    )
+                    add(
+                        CustomAccessibilityAction("Add to queue") {
+                            onAddToQueue()
+                            true
+                        },
+                    )
+                    if (onToggleFavourite != null) {
+                        val label = if (isFavourite) "Remove favourite" else "Add to favourites"
+                        add(
+                            CustomAccessibilityAction(label) {
+                                onToggleFavourite()
+                                true
+                            },
+                        )
+                    }
+                    add(
+                        CustomAccessibilityAction("Track details") {
+                            showDetails = true
+                            true
+                        },
+                    )
+                }
+            }
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -944,6 +990,9 @@ private fun LocalTrackRow(
                 overflow = TextOverflow.Ellipsis
             )
         }
+        // Without this the duration butts straight against the title's ellipsis at
+        // large font scales, where the text column runs the full width it is given.
+        Spacer(modifier = Modifier.width(12.dp))
         // A marker, not a button, and only present when it applies — so an
         // unfavourited row spends nothing on it.
         if (isFavourite) {
@@ -961,7 +1010,11 @@ private fun LocalTrackRow(
         Text(
             text = formatDuration(track.durationMs),
             style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            // Read aloud, "3:42" is "three colon forty-two".
+            modifier = Modifier.semantics {
+                contentDescription = spokenDuration(track.durationMs)
+            }
         )
 
         TrackContextMenu(
@@ -1194,7 +1247,7 @@ private fun AlbumCard(album: Album, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(12.dp)
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick, onClickLabel = "Show album"),
         colors = CardDefaults.cardColors()
     ) {
         Row(modifier = Modifier.padding(12.dp)) {
@@ -1395,6 +1448,15 @@ fun SearchScreen(
  * "Unknown artist • " with a dangling separator — which is most of a fresh library
  * before the thorough scan has run.
  */
+private fun spokenDuration(durationMs: Long): String {
+    val totalSeconds = durationMs / 1000L
+    val minutes = totalSeconds / 60L
+    val seconds = totalSeconds % 60L
+    val minutePart = if (minutes == 1L) "1 minute" else "$minutes minutes"
+    val secondPart = if (seconds == 1L) "1 second" else "$seconds seconds"
+    return if (minutes == 0L) secondPart else "$minutePart $secondPart"
+}
+
 private fun trackSubtitle(track: LocalTrack): String =
     if (track.album.isBlank()) track.artist else "${track.artist} • ${track.album}"
 

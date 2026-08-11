@@ -139,7 +139,7 @@ private fun ArtistRow(artist: ArtistInfo, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(onClick = onClick, onClickLabel = "Show tracks")
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

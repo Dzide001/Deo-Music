@@ -22,4 +22,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.coil.compose)
     implementation(libs.kotlinx.coroutines.android)
+
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    debugImplementation(libs.compose.ui.test.manifest)
 }
