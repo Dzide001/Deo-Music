@@ -87,6 +87,22 @@ class RoomLibraryRepository @Inject constructor(
 
     suspend fun trackCount(): Int = dao.trackCount()
 
+    /**
+     * The loudness figures stored for a track, if any.
+     *
+     * Surfaced because ReplayGain is otherwise entirely invisible: whether a track
+     * was tagged, measured or neither changes what you hear and nothing said so.
+     */
+    suspend fun replayGainFor(mediaUri: String): TrackLoudness? =
+        dao.replayGainFor(mediaUri)?.let {
+            TrackLoudness(
+                trackGainDb = it.replayGainTrackDb,
+                trackPeak = it.replayGainTrackPeak,
+                albumGainDb = it.replayGainAlbumDb,
+                albumPeak = it.replayGainAlbumPeak,
+            )
+        }
+
     fun observePlaylists(): Flow<List<PlaylistInfo>> =
         dao.observePlaylistsWithCounts().map { rows ->
             rows.map { PlaylistInfo(id = it.id, name = it.name, trackCount = it.trackCount) }

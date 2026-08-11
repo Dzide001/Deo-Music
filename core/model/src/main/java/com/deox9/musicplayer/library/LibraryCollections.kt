@@ -32,3 +32,20 @@ data class ArtistInfo(
     val trackCount: Int,
     val albumCount: Int
 )
+
+/**
+ * The loudness figures known for a track.
+ *
+ * Null gain means never measured, which is not the same as measured at 0 dB: the
+ * first is left alone at playback, the second is a deliberate no-change. Kept as a
+ * model type rather than passing the database projection outward, so the feature
+ * modules do not need to see the schema.
+ */
+data class TrackLoudness(
+    val trackGainDb: Float?,
+    val trackPeak: Float?,
+    val albumGainDb: Float?,
+    val albumPeak: Float?,
+) {
+    val isMeasured: Boolean get() = trackGainDb != null
+}

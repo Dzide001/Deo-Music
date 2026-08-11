@@ -20,6 +20,8 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.deox9.musicplayer.audio.AudioChainConfig
 import com.deox9.musicplayer.audio.EqBand
+import com.deox9.musicplayer.audio.ReplayGain
+import com.deox9.musicplayer.database.dao.LibraryDao
 import com.deox9.musicplayer.library.AlbumArt
 import com.deox9.musicplayer.library.RecommendationSignalsRepository
 import com.deox9.musicplayer.player.storage.PlaybackSessionRepository
@@ -27,6 +29,7 @@ import com.deox9.musicplayer.player.storage.QueueItem
 import com.deox9.musicplayer.settings.AppSettingsRepository
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -37,6 +40,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import javax.inject.Inject
 
 /**
  * Opts in to the Media3 APIs used here that are still marked unstable: the audio
@@ -48,7 +52,16 @@ import kotlinx.coroutines.withContext
  * for its callers. Worth re-checking on each Media3 version bump.
  */
 @OptIn(markerClass = [UnstableApi::class])
+@AndroidEntryPoint
 class PlaybackService : MediaSessionService() {
+
+    /**
+     * Injected rather than built from a Context like the other repositories here.
+     * The DAO has to be the same instance the rest of the app uses — a second Room
+     * instance over the same file is a different write journal.
+     */
+    @Inject
+    lateinit var libraryDao: LibraryDao
     private var mediaSession: MediaSession? = null
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -67,6 +80,17 @@ class PlaybackService : MediaSessionService() {
     private var eqEnabled: Boolean = false
     private var eqBandLevels: List<Int> = List(10) { 0 }
     private val audioProcessor = DeoAudioProcessor()
+
+    /**
+     * The gain the current track asked for, from its tag or a measurement.
+     *
+     * Null until one is looked up. ReplayGain is a per-track figure; applying the
+     * user's single pre-amp to everything, which is what the settings value alone
+     * amounts to, normalises nothing.
+     */
+    private var currentTrackGainDb: Double? = null
+    private var currentTrackPeak: Double? = null
+    private var gainLookupJob: Job? = null
 
     /** The track being played before the current one, used to attribute skips. */
     private var previousMediaId: String? = null
@@ -119,6 +143,7 @@ class PlaybackService : MediaSessionService() {
                 if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) {
                     recordSkip(previousMediaId)
                 }
+                loadTrackGain(mediaItem)
                 previousMediaId = mediaItem?.mediaId
             }
 
@@ -450,10 +475,35 @@ class PlaybackService : MediaSessionService() {
      * crossfade alone, which is the one thing it is the right tool for: a transition
      * between tracks, not a property of either of them.
      */
+    /**
+     * Looks up the incoming track's stored gain and peak.
+     *
+     * Off the main thread and cancelling any lookup still in flight: skipping quickly
+     * through a queue would otherwise let an earlier track's figures land after a
+     * later one's and stick.
+     */
+    private fun loadTrackGain(mediaItem: MediaItem?) {
+        gainLookupJob?.cancel()
+        val uri = mediaItem?.localConfiguration?.uri?.toString()
+        if (uri.isNullOrBlank()) {
+            currentTrackGainDb = null
+            currentTrackPeak = null
+            applyAudioChain()
+            return
+        }
+
+        gainLookupJob = ioScope.launch {
+            val stored = runCatching { libraryDao.replayGainFor(uri) }.getOrNull()
+            currentTrackGainDb = stored?.replayGainTrackDb?.toDouble()
+            currentTrackPeak = stored?.replayGainTrackPeak?.toDouble()
+            applyAudioChain()
+        }
+    }
+
     private fun applyAudioChain() {
         audioProcessor.setConfig(
             AudioChainConfig(
-                gainDb = if (replayGainEnabled) replayGainDb.toDouble() else 0.0,
+                gainDb = if (replayGainEnabled) effectiveGainDb() else 0.0,
                 bands = if (eqEnabled) EqBand.fromGraphicLevels(eqBandLevels) else emptyList(),
                 // Always on. It costs a few milliseconds of latency and is the only
                 // thing standing between a boost and a clipped output.
@@ -461,6 +511,22 @@ class PlaybackService : MediaSessionService() {
             ),
         )
     }
+
+    /**
+     * The track's own gain plus the user's pre-amp, capped so a boost cannot clip.
+     *
+     * The settings value is the pre-amp, not the gain — it was previously being used
+     * as the whole figure, which applied the same adjustment to every track and so
+     * normalised nothing.
+     */
+    private fun effectiveGainDb(): Double = ReplayGain.playbackGainDb(
+        tagGainDb = currentTrackGainDb,
+        preAmpDb = replayGainDb.toDouble(),
+        // An untagged, unmeasured track is left alone rather than guessed at.
+        fallbackGainDb = 0.0,
+        peak = currentTrackPeak,
+        preventClipping = true,
+    )
 
     private fun applyEffectivePlayerVolume(player: ExoPlayer) {
         player.volume = transitionVolumeMultiplier.coerceIn(0f, 1f)

@@ -76,6 +76,40 @@ interface LibraryDao {
     @Query("SELECT COUNT(*) FROM tracks")
     suspend fun trackCount(): Int
 
+    /**
+     * Tracks with no track-gain figure from either a tag or a measurement.
+     *
+     * Ordered newest first so a freshly copied album is measured before the rest of
+     * the library, which is the part the user is most likely to play next.
+     */
+    @Query(
+        """
+        SELECT id, mediaUri FROM tracks
+        WHERE replayGainTrackDb IS NULL
+        ORDER BY dateAddedMs DESC
+        LIMIT :limit
+        """,
+    )
+    suspend fun tracksWithoutReplayGain(limit: Int): List<TrackGainTarget>
+
+    @Query(
+        """
+        UPDATE tracks
+        SET replayGainTrackDb = :gainDb, replayGainTrackPeak = :peak
+        WHERE id = :trackId
+        """,
+    )
+    suspend fun setMeasuredReplayGain(trackId: Long, gainDb: Float, peak: Float)
+
+    /** The gain and peak to apply for one track at playback. */
+    @Query(
+        """
+        SELECT replayGainTrackDb, replayGainTrackPeak, replayGainAlbumDb, replayGainAlbumPeak
+        FROM tracks WHERE mediaUri = :mediaUri
+        """,
+    )
+    suspend fun replayGainFor(mediaUri: String): TrackReplayGain?
+
     // ---- Joined reads --------------------------------------------------------
 
     @Query(

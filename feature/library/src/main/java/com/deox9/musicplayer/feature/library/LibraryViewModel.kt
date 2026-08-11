@@ -14,6 +14,7 @@ import com.deox9.musicplayer.library.PlaylistInfo
 import com.deox9.musicplayer.library.RecommendationSignals
 import com.deox9.musicplayer.library.RecommendationSignalsRepository
 import com.deox9.musicplayer.library.RoomLibraryRepository
+import com.deox9.musicplayer.library.TrackLoudness
 import com.deox9.musicplayer.player.PlaybackConnection
 import com.deox9.musicplayer.scanner.LibraryScanner
 import com.deox9.musicplayer.settings.AppSettings
@@ -86,6 +87,9 @@ class LibraryViewModel @Inject constructor(
         libraryRepository.tracksByArtist(artistId)
 
     suspend fun searchTracks(query: String): List<LocalTrack> = libraryRepository.search(query)
+
+    suspend fun replayGainFor(mediaUri: String): TrackLoudness? =
+        libraryRepository.replayGainFor(mediaUri)
 
     suspend fun tracksByPlaylist(playlistId: Long): List<LocalTrack> =
         libraryRepository.tracksByPlaylist(playlistId)

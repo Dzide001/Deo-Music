@@ -1088,7 +1088,16 @@ private fun TrackContextMenu(
 }
 
 @Composable
-private fun TrackDetailsDialog(track: LocalTrack, onDismiss: () -> Unit) {
+private fun TrackDetailsDialog(
+    track: LocalTrack,
+    onDismiss: () -> Unit,
+    viewModel: LibraryViewModel = hiltViewModel()
+) {
+    val gain by produceState<String?>(initialValue = null, key1 = track.contentUri) {
+        val stored = withContext(Dispatchers.IO) { viewModel.replayGainFor(track.contentUri) }
+        value = describeReplayGain(stored?.trackGainDb, stored?.trackPeak)
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
@@ -1100,10 +1109,23 @@ private fun TrackDetailsDialog(track: LocalTrack, onDismiss: () -> Unit) {
                 "Title: ${track.title}\n" +
                     "Artist: ${track.artist}\n" +
                     "Album: ${track.album}\n" +
-                    "Duration: ${formatDuration(track.durationMs)}"
+                    "Duration: ${formatDuration(track.durationMs)}\n" +
+                    "Loudness: ${gain ?: "checking…"}"
             )
         }
     )
+}
+
+/**
+ * How the stored ReplayGain figures read to a person.
+ *
+ * "Not measured yet" rather than "0 dB": a track with no figure is left alone at
+ * playback, which is a different thing from one measured as needing no change.
+ */
+private fun describeReplayGain(gainDb: Float?, peak: Float?): String {
+    if (gainDb == null) return "not measured yet"
+    val peakText = peak?.let { ", peak %.2f".format(it) } ?: ""
+    return "%+.2f dB%s".format(gainDb, peakText)
 }
 
 @Composable

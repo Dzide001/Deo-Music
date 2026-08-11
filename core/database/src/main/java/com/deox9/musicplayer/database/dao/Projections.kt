@@ -52,3 +52,23 @@ data class ArtistWithCounts(
     val trackCount: Int,
     val albumCount: Int,
 )
+
+/** Just enough of a track to measure it. */
+data class TrackGainTarget(
+    val id: Long,
+    val mediaUri: String,
+)
+
+/**
+ * A track's stored ReplayGain figures.
+ *
+ * All four are nullable and stay that way: null means never measured, which is a
+ * different thing from a measured 0 dB, and only one of them can be corrected by
+ * running a scan.
+ */
+data class TrackReplayGain(
+    val replayGainTrackDb: Float?,
+    val replayGainTrackPeak: Float?,
+    val replayGainAlbumDb: Float?,
+    val replayGainAlbumPeak: Float?,
+)

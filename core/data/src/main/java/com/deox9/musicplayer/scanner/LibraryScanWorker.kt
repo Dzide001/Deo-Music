@@ -22,6 +22,7 @@ class LibraryScanWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
     private val scanner: LibraryScanner,
+    private val replayGainScanner: ReplayGainScanner,
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -29,7 +30,19 @@ class LibraryScanWorker @AssistedInject constructor(
         val thorough = inputData.getBoolean(KEY_THOROUGH, false)
 
         return when (scanner.scan(minimumDurationMs, thorough)) {
-            is LibraryScanner.State.Complete -> Result.success()
+            is LibraryScanner.State.Complete -> {
+                // A small batch inline, then the rest handed to its own worker.
+                //
+                // Inline because a separate worker is not reliably dispatched: on the
+                // test device the ReplayGain job sits in JobScheduler as READY with
+                // its constraints satisfied and is never run, while this worker starts
+                // every time. Measuring a few tracks here means loudness data appears
+                // at all on such a device, rather than only on ones whose scheduler is
+                // less aggressive.
+                replayGainScanner.measureBatch(limit = INLINE_MEASURE_BATCH)
+                ReplayGainScanWorker.enqueue(applicationContext)
+                Result.success()
+            }
             // Retry rather than fail: a scan interrupted by the media store being
             // busy or storage being unmounted is worth another attempt.
             is LibraryScanner.State.Failed -> Result.retry()
@@ -39,6 +52,12 @@ class LibraryScanWorker @AssistedInject constructor(
 
     companion object {
         const val WORK_NAME = "library-scan"
+
+        /**
+         * Kept small: this runs inside the library scan, and a full decode per track
+         * is the most expensive thing the app does.
+         */
+        private const val INLINE_MEASURE_BATCH = 10
         const val KEY_MINIMUM_DURATION_MS = "minimum_duration_ms"
         const val KEY_THOROUGH = "thorough"
 
