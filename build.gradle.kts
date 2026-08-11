@@ -23,6 +23,7 @@ detekt {
             "app/src/foss/java",
             "app/src/full/java",
             "core/model/src/main/java",
+            "core/audio/src/main/java",
             "core/data/src/main/java",
             "core/database/src/main/java",
             "core/designsystem/src/main/java",

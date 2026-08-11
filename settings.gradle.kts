@@ -28,6 +28,7 @@ include(":core:database")
 include(":core:datastore")
 include(":core:data")
 include(":core:designsystem")
+include(":core:audio")
 include(":core:media")
 include(":core:ui")
 
