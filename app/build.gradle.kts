@@ -88,6 +88,11 @@ android {
     buildTypes {
         debug {
             isMinifyEnabled = false
+            // Its own package, so a debug build installs alongside the release one
+            // instead of demanding it be uninstalled first — which would take the
+            // library, favourites and history with it.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
         }
         release {
             isMinifyEnabled = true
