@@ -9,6 +9,7 @@ android {
 }
 
 dependencies {
+    implementation(projects.core.audio)
     implementation(projects.core.model)
     implementation(projects.core.data)
     implementation(projects.core.datastore)

@@ -2,7 +2,7 @@
 package com.deox9.musicplayer.player
 
 import android.content.ContentResolver
-import android.media.audiofx.Equalizer
+import android.content.Context
 import android.net.Uri
 import android.provider.MediaStore
 import androidx.annotation.OptIn
@@ -12,9 +12,14 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.deox9.musicplayer.audio.AudioChainConfig
+import com.deox9.musicplayer.audio.EqBand
 import com.deox9.musicplayer.library.AlbumArt
 import com.deox9.musicplayer.library.RecommendationSignalsRepository
 import com.deox9.musicplayer.player.storage.PlaybackSessionRepository
@@ -32,7 +37,6 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.pow
 
 /**
  * Opts in to the Media3 APIs used here that are still marked unstable: the audio
@@ -59,12 +63,10 @@ class PlaybackService : MediaSessionService() {
     private var lastCrossfadedMediaId: String? = null
     private var replayGainEnabled: Boolean = false
     private var replayGainDb: Float = 0f
-    private var replayGainMultiplier: Float = 1f
     private var transitionVolumeMultiplier: Float = 1f
     private var eqEnabled: Boolean = false
     private var eqBandLevels: List<Int> = List(10) { 0 }
-    private var equalizer: Equalizer? = null
-    private var equalizerSessionId: Int = C.AUDIO_SESSION_ID_UNSET
+    private val audioProcessor = DeoAudioProcessor()
 
     /** The track being played before the current one, used to attribute skips. */
     private var previousMediaId: String? = null
@@ -76,7 +78,26 @@ class PlaybackService : MediaSessionService() {
         appSettingsRepository = AppSettingsRepository(this)
         recommendationSignalsRepository = RecommendationSignalsRepository(this)
 
-        val player = ExoPlayer.Builder(this)
+        // The DSP runs inside the player's own audio path rather than as a platform
+        // AudioEffect on the session. That is what makes the equaliser behave the
+        // same on every device, and what lets ReplayGain apply a boost at all —
+        // player.volume is a multiplier that cannot exceed 1.
+        val renderersFactory = object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean,
+            ): AudioSink = DefaultAudioSink.Builder(context)
+                // Float output, so a boost has somewhere to go before the limiter
+                // sees it. In 16-bit the intermediate would clip first.
+                .setEnableFloatOutput(true)
+                .setAudioProcessorChain(
+                    DefaultAudioSink.DefaultAudioProcessorChain(audioProcessor),
+                )
+                .build()
+        }
+
+        val player = ExoPlayer.Builder(this, renderersFactory)
             .setAudioAttributes(
                 AudioAttributes.DEFAULT,
                 true
@@ -137,7 +158,6 @@ class PlaybackService : MediaSessionService() {
                     }
 
                     if (exoPlayer != null) {
-                        applyEq(exoPlayer)
                         applyEffectivePlayerVolume(exoPlayer)
                     }
                 }
@@ -156,13 +176,9 @@ class PlaybackService : MediaSessionService() {
                 crossfadeEnabled = settings.crossfadeEnabled
                 replayGainEnabled = settings.replayGainEnabled
                 replayGainDb = settings.replayGainDb
-                replayGainMultiplier = if (replayGainEnabled) {
-                    dbToLinearGain(replayGainDb)
-                } else {
-                    1f
-                }
                 eqEnabled = settings.eqEnabled
                 eqBandLevels = settings.eqBandLevels
+                applyAudioChain()
 
                 // ExoPlayer advances between items gaplessly by default. The previous
                 // wiring called setPauseAtEndOfMediaItems(!gaplessEnabled), which does
@@ -174,7 +190,6 @@ class PlaybackService : MediaSessionService() {
                     transitionVolumeMultiplier = 1f
                 }
 
-                applyEq(player)
                 applyEffectivePlayerVolume(player)
             }
         }
@@ -428,57 +443,27 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    private fun dbToLinearGain(db: Float): Float {
-        return 10.0.pow((db / 20f).toDouble()).toFloat().coerceIn(0.1f, 1f)
+    /**
+     * Pushes the current settings into the processor.
+     *
+     * Gain and equalisation both live there now. player.volume is left to the
+     * crossfade alone, which is the one thing it is the right tool for: a transition
+     * between tracks, not a property of either of them.
+     */
+    private fun applyAudioChain() {
+        audioProcessor.setConfig(
+            AudioChainConfig(
+                gainDb = if (replayGainEnabled) replayGainDb.toDouble() else 0.0,
+                bands = if (eqEnabled) EqBand.fromGraphicLevels(eqBandLevels) else emptyList(),
+                // Always on. It costs a few milliseconds of latency and is the only
+                // thing standing between a boost and a clipped output.
+                limiterEnabled = true,
+            ),
+        )
     }
 
     private fun applyEffectivePlayerVolume(player: ExoPlayer) {
-        val effective = (transitionVolumeMultiplier * replayGainMultiplier).coerceIn(0f, 1f)
-        player.volume = effective
-    }
-
-    private fun applyEq(player: ExoPlayer) {
-        if (!eqEnabled) {
-            releaseEq()
-            return
-        }
-
-        val sessionId = player.audioSessionId
-        if (sessionId == C.AUDIO_SESSION_ID_UNSET || sessionId <= 0) {
-            return
-        }
-
-        if (equalizer == null || equalizerSessionId != sessionId) {
-            releaseEq()
-            equalizer = Equalizer(0, sessionId)
-            equalizerSessionId = sessionId
-        }
-
-        val eq = equalizer ?: return
-        eq.enabled = true
-        val bandCount = eq.numberOfBands.toInt().coerceAtLeast(1)
-        val bandRange = eq.bandLevelRange
-        val minLevel = bandRange[0].toInt()
-        val maxLevel = bandRange[1].toInt()
-        val virtualLevels = MutableList(10) { idx ->
-            eqBandLevels.getOrElse(idx) { 0 }
-        }
-
-        for (band in 0 until bandCount) {
-            val virtualIndex = if (bandCount == 1) {
-                0
-            } else {
-                ((band.toFloat() / (bandCount - 1).toFloat()) * (virtualLevels.size - 1)).toInt()
-            }
-            val desired = virtualLevels[virtualIndex].coerceIn(minLevel, maxLevel)
-            eq.setBandLevel(band.toShort(), desired.toShort())
-        }
-    }
-
-    private fun releaseEq() {
-        equalizer?.release()
-        equalizer = null
-        equalizerSessionId = C.AUDIO_SESSION_ID_UNSET
+        player.volume = transitionVolumeMultiplier.coerceIn(0f, 1f)
     }
 
     private fun runCrossfadePreview(player: Player) {
@@ -517,7 +502,6 @@ class PlaybackService : MediaSessionService() {
         mediaSession?.player?.let { persistCurrentSession(it) }
         stopPositionPersistence()
         stopCrossfadeMonitor(mediaSession?.player as? ExoPlayer)
-        releaseEq()
         settingsJob?.cancel()
         mediaSession?.run {
             player.release()
