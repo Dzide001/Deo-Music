@@ -105,14 +105,6 @@ fun SettingsSheet(
             )
             Spacer(modifier = Modifier.height(8.dp))
             SettingToggleRow(
-                title = "Gapless playback",
-                checked = settings.gaplessEnabled,
-                onCheckedChange = { enabled ->
-                    viewModel.setGaplessEnabled(enabled)
-                }
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            SettingToggleRow(
                 title = "Crossfade (preview)",
                 checked = settings.crossfadeEnabled,
                 onCheckedChange = { enabled ->

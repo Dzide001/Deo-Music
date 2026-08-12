@@ -443,7 +443,6 @@ private fun AudioSettingsDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 SettingSwitch("Crossfade", settings.crossfadeEnabled, viewModel::setCrossfadeEnabled)
-                SettingSwitch("Gapless", settings.gaplessEnabled, viewModel::setGaplessEnabled)
                 SettingSwitch("Replay gain", settings.replayGainEnabled, viewModel::setReplayGainEnabled)
 
                 if (settings.replayGainEnabled) {

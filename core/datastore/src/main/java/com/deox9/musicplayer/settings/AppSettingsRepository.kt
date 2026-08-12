@@ -31,7 +31,6 @@ const val THEME_MODE_UNSET = ""
 data class AppSettings(
     val webHomeUrl: String = DEFAULT_WEB_HOME_URL,
     val crossfadeEnabled: Boolean = false,
-    val gaplessEnabled: Boolean = true,
     /**
      * Superseded by [themeMode]. Kept so an existing preference can be read once and
      * carried across; nothing writes it any more.
@@ -69,7 +68,6 @@ class AppSettingsRepository(private val context: Context) {
             AppSettings(
                 webHomeUrl = prefs[Keys.WEB_HOME_URL] ?: DEFAULT_WEB_HOME_URL,
                 crossfadeEnabled = prefs[Keys.CROSSFADE_ENABLED] ?: false,
-                gaplessEnabled = prefs[Keys.GAPLESS_ENABLED] ?: true,
                 darkThemeEnabled = prefs[Keys.DARK_THEME_ENABLED] ?: true,
                 themeMode = prefs[Keys.THEME_MODE] ?: THEME_MODE_UNSET,
                 dynamicColorEnabled = prefs[Keys.DYNAMIC_COLOR_ENABLED] ?: true,
@@ -97,12 +95,6 @@ class AppSettingsRepository(private val context: Context) {
     suspend fun setCrossfadeEnabled(enabled: Boolean) {
         context.appSettingsDataStore.edit { prefs ->
             prefs[Keys.CROSSFADE_ENABLED] = enabled
-        }
-    }
-
-    suspend fun setGaplessEnabled(enabled: Boolean) {
-        context.appSettingsDataStore.edit { prefs ->
-            prefs[Keys.GAPLESS_ENABLED] = enabled
         }
     }
 
@@ -170,7 +162,6 @@ class AppSettingsRepository(private val context: Context) {
         context.appSettingsDataStore.edit { prefs ->
             prefs[Keys.WEB_HOME_URL] = DEFAULT_WEB_HOME
             prefs[Keys.CROSSFADE_ENABLED] = false
-            prefs[Keys.GAPLESS_ENABLED] = true
             prefs[Keys.THEME_MODE] = THEME_MODE_UNSET
             prefs[Keys.DYNAMIC_COLOR_ENABLED] = true
             prefs[Keys.AMOLED_ENABLED] = false
@@ -260,7 +251,11 @@ class AppSettingsRepository(private val context: Context) {
     private object Keys {
         val WEB_HOME_URL = stringPreferencesKey("web_home_url")
         val CROSSFADE_ENABLED = booleanPreferencesKey("crossfade_enabled")
-        val GAPLESS_ENABLED = booleanPreferencesKey("gapless_enabled")
+
+        // "gapless_enabled" was removed rather than renamed. DataStore ignores keys
+        // nothing reads, so an existing install simply stops consulting it; the value
+        // is left in place rather than migrated away, since deleting it would be work
+        // in service of a setting that never did anything.
         val DARK_THEME_ENABLED = booleanPreferencesKey("dark_theme_enabled")
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val DYNAMIC_COLOR_ENABLED = booleanPreferencesKey("dynamic_color_enabled")

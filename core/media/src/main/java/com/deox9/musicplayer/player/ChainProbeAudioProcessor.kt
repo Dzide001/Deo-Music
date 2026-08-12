@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.deox9.musicplayer.player
 
+import android.annotation.SuppressLint
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.audio.AudioProcessor
@@ -25,7 +26,15 @@ class ChainProbeAudioProcessor : BaseAudioProcessor() {
         return inputAudioFormat
     }
 
-    /** Never in the path, so the signal chain is what it would be with no processor. */
+    /**
+     * Never in the path, so the signal chain is what it would be with no processor.
+     *
+     * The base implementation reports active once a format has been configured, which
+     * is exactly what has to be refused here: consulting it would put the probe into
+     * the pipeline and stop it being a passive observer. The @CallSuper contract is
+     * broken deliberately and this is the whole reason the class exists.
+     */
+    @SuppressLint("MissingSuperCall")
     override fun isActive(): Boolean = false
 
     override fun queueInput(inputBuffer: ByteBuffer) = Unit

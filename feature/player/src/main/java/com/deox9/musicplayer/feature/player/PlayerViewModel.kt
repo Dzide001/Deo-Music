@@ -75,8 +75,6 @@ class PlayerViewModel @Inject constructor(
 
     fun setCrossfadeEnabled(enabled: Boolean) = edit { settingsRepository.setCrossfadeEnabled(enabled) }
 
-    fun setGaplessEnabled(enabled: Boolean) = edit { settingsRepository.setGaplessEnabled(enabled) }
-
     fun setEqEnabled(enabled: Boolean) = edit { settingsRepository.setEqEnabled(enabled) }
 
     fun setEqBands(bands: List<EqBand>) = edit { settingsRepository.setEqBands(bands) }

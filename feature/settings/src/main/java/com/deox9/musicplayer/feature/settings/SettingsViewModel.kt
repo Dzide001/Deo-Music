@@ -37,8 +37,6 @@ class SettingsViewModel @Inject constructor(
 
     fun setCrossfadeEnabled(enabled: Boolean) = edit { repository.setCrossfadeEnabled(enabled) }
 
-    fun setGaplessEnabled(enabled: Boolean) = edit { repository.setGaplessEnabled(enabled) }
-
     fun setThemeMode(mode: ThemeMode) = edit { repository.setThemeMode(mode.storedValue()) }
 
     fun setDynamicColorEnabled(enabled: Boolean) = edit { repository.setDynamicColorEnabled(enabled) }

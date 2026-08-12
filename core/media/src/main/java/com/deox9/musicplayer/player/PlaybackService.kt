@@ -212,11 +212,11 @@ class PlaybackService : MediaSessionService() {
                 eqBands = settings.eqBands
                 applyAudioChain()
 
-                // ExoPlayer advances between items gaplessly by default. The previous
-                // wiring called setPauseAtEndOfMediaItems(!gaplessEnabled), which does
-                // not disable gapless — it halts playback at the end of every track.
-                // Real gapless (LAME/Xing and iTunSMPB encoder delay/padding trimming)
-                // is Phase 5 work; until then this setting must not touch the player.
+                // There is no gapless setting to honour any more. Playback here is
+                // gapless unconditionally: the extractors trim encoder delay and
+                // padding, and the sink keeps its AudioTrack across a join between
+                // items of the same format — measured in GaplessJoinTest, which is
+                // what makes the claim checkable rather than a comment.
                 if (!settings.crossfadeEnabled) {
                     stopCrossfadeMonitor(player)
                     transitionVolumeMultiplier = 1f
