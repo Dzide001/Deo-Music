@@ -9,6 +9,7 @@ import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.test.core.app.ApplicationProvider
@@ -17,7 +18,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -26,6 +26,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.PI
 import kotlin.math.sin
 
@@ -79,28 +80,32 @@ class GaplessJoinTest {
     }
 
     /**
-     * The property gapless playback actually requires, which this build does not have.
+     * A join flushes the processors but keeps the AudioTrack, and those are not the
+     * same thing.
      *
-     * Ignored rather than deleted or weakened to match: it fails at 2 flushes with no
-     * DSP in the chain and no float output requested, so the sink rebuilds its path at
-     * every join between two identical items. Asserting the observed 2 would turn a
-     * statement of what is wanted into a description of what happens, and the next
-     * person would have no way to tell the difference.
+     * Reading the flush as an output teardown is the mistake this test exists to stop
+     * anyone repeating — I made it. A flush resets the processing pipeline; the
+     * AudioTrack surviving is what says the output stream was continuous. Gapless is
+     * working at the level that matters, and the earlier conclusion that it was not
+     * came from watching the wrong signal.
      *
-     * Un-ignore when the cause is found. The remaining suspect is this test's own
-     * sink: all three measurements build DefaultAudioSink through a buildAudioSink
-     * override, so a default of the stock path may simply not be set here.
+     * What the flush does cost is processor state. Anything holding samples across
+     * buffers loses them here — for the limiter that is its look-ahead line, which is
+     * zeroed and then output as silence.
      */
-    @Ignore("Known defect: the sink rebuilds at every same-format join. See kdoc.")
     @Test
-    fun aSameFormatJoinDoesNotRebuildTheAudioPath() {
-        val bare = measureJoin(withDsp = false)
+    fun aJoinFlushesTheProcessorsButKeepsTheAudioTrack() {
+        val measured = measureJoin(withDsp = true)
 
-        assertTrue("no join was observed", bare.joinObserved)
+        assertTrue("no join was observed", measured.joinObserved)
+        assertTrue(
+            "expected the pipeline to be flushed at the join, saw ${measured.flushesAtJoin}",
+            measured.flushesAtJoin > 0,
+        )
         assertEquals(
-            "the sink rebuilt its path at a join between two identical items",
+            "the AudioTrack was recreated, so the output was not continuous",
             0,
-            bare.flushesAtJoin,
+            measured.audioTracksInitialisedAtJoin,
         )
     }
 
@@ -133,7 +138,74 @@ class GaplessJoinTest {
         val joinObserved: Boolean,
         val flushesAtJoin: Int,
         val configuresAtJoin: Int,
+        val audioTracksInitialisedAtJoin: Int,
     )
+
+    /**
+     * Counts AudioTrack lifecycle events.
+     *
+     * The processor counters are a proxy: a flush says the pipeline was reset, which
+     * usually but not always means the output was torn down. A new AudioTrack is the
+     * discontinuity itself. It is also the only signal available for a stock player,
+     * where no processor of ours can be injected to report anything.
+     */
+    private class AudioTrackCounter : AnalyticsListener {
+        private val initialised = AtomicInteger()
+
+        val initialisedCount: Int get() = initialised.get()
+
+        override fun onAudioTrackInitialized(
+            eventTime: AnalyticsListener.EventTime,
+            audioTrackConfig: AudioSink.AudioTrackConfig,
+        ) {
+            initialised.incrementAndGet()
+        }
+    }
+
+    /**
+     * The same join, on a player built with no audio-sink override at all.
+     *
+     * This is the case the other measurements cannot reach. All of them construct
+     * DefaultAudioSink themselves, and so does PlaybackService, so a default that the
+     * stock path sets and the override misses would look identical to a Media3
+     * limitation in every one of them.
+     */
+    @Test
+    fun theStockSinkDoesNotOutdoTheOverriddenOneAtAJoin() {
+        val stock = measureJoin(sink = SinkUnderTest.Stock)
+        val overridden = measureJoin(sink = SinkUnderTest.OverriddenWithDsp)
+
+        assertTrue("no join was observed on the stock sink", stock.joinObserved)
+        assertTrue("no join was observed on the overridden sink", overridden.joinObserved)
+
+        assertEquals(
+            "AudioTracks created at the join: stock ${stock.audioTracksInitialisedAtJoin}, " +
+                "overridden ${overridden.audioTracksInitialisedAtJoin}",
+            stock.audioTracksInitialisedAtJoin,
+            overridden.audioTracksInitialisedAtJoin,
+        )
+    }
+
+    /**
+     * Whether a stock player joins two identical items without rebuilding its output.
+     *
+     * If this passes while the overridden sink does not, the override is the defect
+     * and PlaybackService has the same one. If it fails too, gapless is not available
+     * from this Media3 configuration at all and the app was never going to have it.
+     */
+    @Test
+    fun theStockSinkKeepsItsAudioTrackAcrossAJoin() {
+        val stock = measureJoin(sink = SinkUnderTest.Stock)
+
+        assertTrue("no join was observed", stock.joinObserved)
+        assertEquals(
+            "the stock sink created a new AudioTrack at a join between identical items",
+            0,
+            stock.audioTracksInitialisedAtJoin,
+        )
+    }
+
+    private enum class SinkUnderTest { Stock, OverriddenBare, OverriddenWithDsp }
 
     /**
      * Plays the same file twice and counts what happens across the boundary.
@@ -141,13 +213,23 @@ class GaplessJoinTest {
      * Counts are sampled once the first item is established and again once the second
      * is, so start-up costs are excluded and only the join is measured.
      */
-    private fun measureJoin(withDsp: Boolean, floatOutput: Boolean = true): JoinMeasurement {
+    private fun measureJoin(
+        withDsp: Boolean = false,
+        floatOutput: Boolean = true,
+        sink: SinkUnderTest = if (withDsp) SinkUnderTest.OverriddenWithDsp else SinkUnderTest.OverriddenBare,
+    ): JoinMeasurement {
         val recorder = RecordingAudioProcessor()
+        val audioTracks = AudioTrackCounter()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         lateinit var player: ExoPlayer
 
         instrumentation.runOnMainSync {
-            player = buildPlayer(recorder, withDsp, floatOutput)
+            player = when (sink) {
+                SinkUnderTest.Stock -> ExoPlayer.Builder(context).build()
+                SinkUnderTest.OverriddenBare -> buildPlayer(recorder, withDsp = false, floatOutput)
+                SinkUnderTest.OverriddenWithDsp -> buildPlayer(recorder, withDsp = true, floatOutput)
+            }
+            player.addAnalyticsListener(audioTracks)
             player.setMediaItems(listOf(mediaItem(), mediaItem()))
             player.prepare()
             player.volume = 0f
@@ -157,10 +239,12 @@ class GaplessJoinTest {
         val reachedFirst = awaitItem(player, index = 0)
         val flushesBefore = recorder.flushCount
         val configuresBefore = recorder.configureCount
+        val audioTracksBefore = audioTracks.initialisedCount
 
         val reachedSecond = awaitItem(player, index = 1)
         val flushesAfter = recorder.flushCount
         val configuresAfter = recorder.configureCount
+        val audioTracksAfter = audioTracks.initialisedCount
 
         instrumentation.runOnMainSync { player.release() }
 
@@ -168,6 +252,7 @@ class GaplessJoinTest {
             joinObserved = reachedFirst && reachedSecond,
             flushesAtJoin = flushesAfter - flushesBefore,
             configuresAtJoin = configuresAfter - configuresBefore,
+            audioTracksInitialisedAtJoin = audioTracksAfter - audioTracksBefore,
         )
     }
 
