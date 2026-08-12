@@ -80,6 +80,9 @@ class PlaybackService : MediaSessionService() {
     private var eqEnabled: Boolean = false
     private var eqBands: List<EqBand> = emptyList()
     private val audioProcessor = DeoAudioProcessor()
+    private val chainProbe = ChainProbeAudioProcessor()
+
+    /** The probe reports sink rebuilds; the DSP does the work. See [PROBE_ONLY]. */
 
     /**
      * The gain the current track asked for, from its tag or a measurement.
@@ -116,7 +119,11 @@ class PlaybackService : MediaSessionService() {
                 // sees it. In 16-bit the intermediate would clip first.
                 .setEnableFloatOutput(true)
                 .setAudioProcessorChain(
-                    DefaultAudioSink.DefaultAudioProcessorChain(audioProcessor),
+                    if (PROBE_ONLY) {
+                        DefaultAudioSink.DefaultAudioProcessorChain(chainProbe)
+                    } else {
+                        DefaultAudioSink.DefaultAudioProcessorChain(chainProbe, audioProcessor)
+                    },
                 )
                 .build()
         }
@@ -580,6 +587,16 @@ class PlaybackService : MediaSessionService() {
     }
 
     companion object {
+        /**
+         * Control switch for the gapless measurement.
+         *
+         * True routes audio through no processor at all, leaving only the probe to
+         * report when the sink rebuilds its path — the comparison that says whether
+         * the DSP causes a reconfiguration at a track boundary or merely observes
+         * one. False is the shipping path and must stay false.
+         */
+        const val PROBE_ONLY = false
+
         const val SESSION_ID = "music-player-session"
 
         private const val CROSSFADE_CHECK_INTERVAL_MS = 250L
