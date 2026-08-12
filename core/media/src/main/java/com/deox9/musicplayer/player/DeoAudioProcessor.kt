@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.deox9.musicplayer.player
 
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
@@ -60,6 +61,11 @@ class DeoAudioProcessor : BaseAudioProcessor() {
         ) {
             throw AudioProcessor.UnhandledAudioFormatException(inputAudioFormat)
         }
+        Log.i(
+            TAG,
+            "configure: ${inputAudioFormat.sampleRate} Hz, " +
+                "${inputAudioFormat.channelCount} ch, encoding ${inputAudioFormat.encoding}",
+        )
         chain = AudioChain(inputAudioFormat.sampleRate, inputAudioFormat.channelCount).apply {
             configure(pendingConfig)
         }
@@ -125,6 +131,11 @@ class DeoAudioProcessor : BaseAudioProcessor() {
      * previous position into the new one — audible as a click at the seek point.
      */
     override fun onFlush(streamMetadata: AudioProcessor.StreamMetadata) {
+        // Logged because this is the signal for whether a track change was gapless.
+        // The sink keeps its processors running across a transition between items of
+        // the same format; a flush here means it tore the path down and rebuilt it,
+        // which is the discontinuity gapless playback exists to avoid.
+        Log.i(TAG, "flush")
         chain?.reset()
     }
 
@@ -134,6 +145,7 @@ class DeoAudioProcessor : BaseAudioProcessor() {
     }
 
     private companion object {
+        const val TAG = "DeoAudioChain"
         const val BYTES_PER_FLOAT = 4
         const val BYTES_PER_SHORT = 2
         const val SHORT_SCALE = 32768f
