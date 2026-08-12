@@ -9,6 +9,7 @@ android {
 }
 
 dependencies {
+    implementation(projects.core.audio)
     implementation(libs.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
 

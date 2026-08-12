@@ -3,6 +3,7 @@ package com.deox9.musicplayer.feature.player
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.deox9.musicplayer.audio.EqBand
 import com.deox9.musicplayer.library.FavouritesRepository
 import com.deox9.musicplayer.library.LocalMusicRepository
 import com.deox9.musicplayer.library.PlaylistInfo
@@ -78,7 +79,7 @@ class PlayerViewModel @Inject constructor(
 
     fun setEqEnabled(enabled: Boolean) = edit { settingsRepository.setEqEnabled(enabled) }
 
-    fun setEqBandLevels(levels: List<Int>) = edit { settingsRepository.setEqBandLevels(levels) }
+    fun setEqBands(bands: List<EqBand>) = edit { settingsRepository.setEqBands(bands) }
 
     fun setReplayGainEnabled(enabled: Boolean) = edit { settingsRepository.setReplayGainEnabled(enabled) }
 

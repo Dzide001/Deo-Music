@@ -9,9 +9,12 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.deox9.musicplayer.audio.EqBand
+import com.deox9.musicplayer.audio.EqBandType
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
+import org.json.JSONObject
 
 private val Context.appSettingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "app_settings")
 private const val DEFAULT_WEB_HOME_URL = "https://m.youtube.com"
@@ -44,6 +47,13 @@ data class AppSettings(
     val replayGainDb: Float = 0f,
     val eqBandLevels: List<Int> = List(10) { 0 },
     /**
+     * The parametric bands actually applied.
+     *
+     * [eqBandLevels] is the older ten-slider representation and is kept only so an
+     * existing setup migrates; once bands are stored, this is the truth.
+     */
+    val eqBands: List<EqBand> = emptyList(),
+    /**
      * Whether the library scan opens every file to read its tags.
      *
      * Off by default: it is the only way to get ReplayGain and reliable album
@@ -69,6 +79,10 @@ class AppSettingsRepository(private val context: Context) {
                 replayGainEnabled = prefs[Keys.REPLAY_GAIN_ENABLED] ?: false,
                 replayGainDb = prefs[Keys.REPLAY_GAIN_DB] ?: 0f,
                 eqBandLevels = decodeEqBands(prefs[Keys.EQ_BAND_LEVELS_JSON] ?: "[]"),
+                eqBands = decodeParametricBands(
+                    raw = prefs[Keys.EQ_BANDS_JSON],
+                    legacyLevels = decodeEqBands(prefs[Keys.EQ_BAND_LEVELS_JSON] ?: "[]"),
+                ),
                 thoroughScanEnabled = prefs[Keys.THOROUGH_SCAN_ENABLED] ?: false
             )
         }
@@ -165,8 +179,60 @@ class AppSettingsRepository(private val context: Context) {
             prefs[Keys.REPLAY_GAIN_ENABLED] = false
             prefs[Keys.REPLAY_GAIN_DB] = 0f
             prefs[Keys.EQ_BAND_LEVELS_JSON] = encodeEqBands(List(10) { 0 })
+            prefs[Keys.EQ_BANDS_JSON] = encodeParametricBands(emptyList())
             prefs[Keys.THOROUGH_SCAN_ENABLED] = false
         }
+    }
+
+    suspend fun setEqBands(bands: List<EqBand>) {
+        context.appSettingsDataStore.edit { prefs ->
+            prefs[Keys.EQ_BANDS_JSON] = encodeParametricBands(bands)
+        }
+    }
+
+    /**
+     * Reads the parametric bands, falling back to the old ten sliders.
+     *
+     * Absent — not empty — means the user has never touched the parametric editor,
+     * so whatever their graphic equaliser was set to is converted and carried over.
+     * An explicitly empty list is a real state, meaning "no bands", and must not be
+     * overwritten by the old settings.
+     */
+    private fun decodeParametricBands(raw: String?, legacyLevels: List<Int>): List<EqBand> {
+        if (raw == null) return EqBand.fromGraphicLevels(legacyLevels).filterNot { it.isTransparent }
+
+        return try {
+            val array = JSONArray(raw)
+            (0 until array.length()).mapNotNull { index ->
+                val item = array.optJSONObject(index) ?: return@mapNotNull null
+                EqBand(
+                    type = runCatching { EqBandType.valueOf(item.getString("type")) }
+                        .getOrDefault(EqBandType.Peaking),
+                    frequencyHz = item.optDouble("frequencyHz", 1000.0)
+                        .coerceIn(MIN_BAND_HZ, MAX_BAND_HZ),
+                    gainDb = item.optDouble("gainDb", 0.0).coerceIn(MIN_BAND_DB, MAX_BAND_DB),
+                    q = item.optDouble("q", EqBand.DEFAULT_Q).coerceIn(MIN_BAND_Q, MAX_BAND_Q),
+                    enabled = item.optBoolean("enabled", true),
+                )
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun encodeParametricBands(bands: List<EqBand>): String {
+        val array = JSONArray()
+        bands.forEach { band ->
+            array.put(
+                JSONObject()
+                    .put("type", band.type.name)
+                    .put("frequencyHz", band.frequencyHz.coerceIn(MIN_BAND_HZ, MAX_BAND_HZ))
+                    .put("gainDb", band.gainDb.coerceIn(MIN_BAND_DB, MAX_BAND_DB))
+                    .put("q", band.q.coerceIn(MIN_BAND_Q, MAX_BAND_Q))
+                    .put("enabled", band.enabled),
+            )
+        }
+        return array.toString()
     }
 
     private fun decodeEqBands(raw: String): List<Int> {
@@ -204,10 +270,19 @@ class AppSettingsRepository(private val context: Context) {
         val REPLAY_GAIN_ENABLED = booleanPreferencesKey("replay_gain_enabled")
         val REPLAY_GAIN_DB = floatPreferencesKey("replay_gain_db")
         val EQ_BAND_LEVELS_JSON = stringPreferencesKey("eq_band_levels_json")
+        val EQ_BANDS_JSON = stringPreferencesKey("eq_bands_json")
         val THOROUGH_SCAN_ENABLED = booleanPreferencesKey("thorough_scan_enabled")
     }
 
     companion object {
         const val DEFAULT_WEB_HOME = DEFAULT_WEB_HOME_URL
+
+        /** Ranges the editor offers and stored values are clamped to. */
+        const val MIN_BAND_HZ = 20.0
+        const val MAX_BAND_HZ = 20_000.0
+        const val MIN_BAND_DB = -24.0
+        const val MAX_BAND_DB = 24.0
+        const val MIN_BAND_Q = 0.1
+        const val MAX_BAND_Q = 18.0
     }
 }

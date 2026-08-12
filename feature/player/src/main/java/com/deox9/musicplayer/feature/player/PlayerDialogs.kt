@@ -38,6 +38,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.deox9.musicplayer.audio.EqBand
+import com.deox9.musicplayer.audio.EqBandType
 import com.deox9.musicplayer.library.PlaylistInfo
 import com.deox9.musicplayer.lyrics.LyricsData
 import com.deox9.musicplayer.player.PlaybackState
@@ -481,24 +483,29 @@ private fun SettingSwitch(label: String, checked: Boolean, onChange: (Boolean) -
 @Composable
 private fun EqualizerDialog(onDismiss: () -> Unit, viewModel: PlayerViewModel) {
     val settings by viewModel.settings.collectAsState()
-    val levels = settings.eqBandLevels
+    val bands = settings.eqBands
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Equalizer") },
+        title = { Text("Equaliser") },
         text = {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(max = EQ_MAX_HEIGHT)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // The curve first, because it is the only thing that shows what the
+                // bands add up to.
+                EqCurve(bands = bands, sampleRate = CURVE_SAMPLE_RATE)
+
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     EqPreset.entries.forEach { preset ->
                         TextButton(
                             onClick = {
                                 viewModel.setEqEnabled(true)
-                                viewModel.setEqBandLevels(preset.levels)
+                                viewModel.setEqBands(preset.bands)
                             },
                         ) {
                             Text(preset.label)
@@ -506,27 +513,35 @@ private fun EqualizerDialog(onDismiss: () -> Unit, viewModel: PlayerViewModel) {
                     }
                 }
 
-                repeat(EQ_BANDS) { index ->
-                    val value = levels.getOrElse(index) { 0 }
+                if (bands.isEmpty()) {
                     Text(
-                        text = "Band ${index + 1}: ${"%.1f".format(value / EQ_MILLIBELS_PER_DB)} dB",
-                        style = MaterialTheme.typography.labelSmall,
+                        text = "No bands. Add one, or pick a preset.",
+                        style = MaterialTheme.typography.bodyMedium,
                     )
-                    Slider(
-                        value = value.toFloat(),
-                        onValueChange = { newValue ->
-                            val updated = List(EQ_BANDS) { band ->
-                                if (band == index) {
-                                    newValue.toInt().coerceIn(-EQ_RANGE, EQ_RANGE)
-                                } else {
-                                    levels.getOrElse(band) { 0 }
-                                }
-                            }
+                }
+
+                bands.forEachIndexed { index, band ->
+                    EqBandEditor(
+                        band = band,
+                        index = index,
+                        onChange = { updated ->
                             viewModel.setEqEnabled(true)
-                            viewModel.setEqBandLevels(updated)
+                            viewModel.setEqBands(bands.toMutableList().also { it[index] = updated })
                         },
-                        valueRange = -EQ_RANGE.toFloat()..EQ_RANGE.toFloat(),
+                        onRemove = {
+                            viewModel.setEqBands(bands.toMutableList().also { it.removeAt(index) })
+                        },
                     )
+                }
+
+                TextButton(
+                    enabled = bands.size < MAX_BANDS,
+                    onClick = {
+                        viewModel.setEqEnabled(true)
+                        viewModel.setEqBands(bands + defaultNewBand(bands))
+                    },
+                ) {
+                    Text(if (bands.size < MAX_BANDS) "Add band" else "Band limit reached")
                 }
             }
         },
@@ -537,22 +552,66 @@ private fun EqualizerDialog(onDismiss: () -> Unit, viewModel: PlayerViewModel) {
 }
 
 /**
- * The four presets the dialog offered as hand-written lists inside four onClick
- * bodies. Levels are in millibels, matching what the settings store holds.
+ * Where a new band starts.
+ *
+ * Placed an octave above the highest existing band rather than always at 1 kHz, so
+ * adding several in a row does not stack them all on the same frequency where their
+ * effects compound invisibly.
  */
-private enum class EqPreset(val label: String, val levels: List<Int>) {
-    Flat("Flat", List(EQ_BANDS) { 0 }),
-    Bass("Bass", listOf(350, 300, 220, 120, 40, -40, -100, -180, -220, -260)),
-    Vocal("Vocal", listOf(-200, -120, -40, 140, 260, 260, 140, -20, -120, -200)),
-    Treble("Treble", listOf(-260, -220, -160, -80, 40, 140, 240, 320, 380, 430)),
+private fun defaultNewBand(existing: List<EqBand>): EqBand {
+    val highest = existing.maxOfOrNull { it.frequencyHz } ?: DEFAULT_NEW_BAND_HZ
+    return EqBand(
+        type = EqBandType.Peaking,
+        frequencyHz = (highest * 2).coerceAtMost(MAX_NEW_BAND_HZ),
+        gainDb = 0.0,
+    )
+}
+
+/**
+ * The presets, as parametric bands.
+ *
+ * Previously ten hard-coded millibel values per preset, which only meant anything
+ * against the fixed ISO frequencies of the graphic equaliser. Expressed as bands they
+ * say what they are doing: a bass preset is a low shelf, not a pattern of sliders.
+ */
+private enum class EqPreset(val label: String, val bands: List<EqBand>) {
+    Flat("Flat", emptyList()),
+    Bass(
+        "Bass",
+        listOf(
+            EqBand(EqBandType.LowShelf, frequencyHz = 120.0, gainDb = 6.0, q = 0.7),
+            EqBand(EqBandType.Peaking, frequencyHz = 60.0, gainDb = 3.0, q = 1.0),
+        ),
+    ),
+    Vocal(
+        "Vocal",
+        listOf(
+            EqBand(EqBandType.Peaking, frequencyHz = 300.0, gainDb = -3.0, q = 1.2),
+            EqBand(EqBandType.Peaking, frequencyHz = 2500.0, gainDb = 4.0, q = 1.0),
+            EqBand(EqBandType.HighShelf, frequencyHz = 8000.0, gainDb = 2.0, q = 0.7),
+        ),
+    ),
+    Treble(
+        "Treble",
+        listOf(EqBand(EqBandType.HighShelf, frequencyHz = 6000.0, gainDb = 6.0, q = 0.7)),
+    ),
 }
 
 private fun Context.toast(message: String) {
     Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
 }
 
-private const val EQ_BANDS = 10
-private const val EQ_RANGE = 1500
-private const val EQ_MILLIBELS_PER_DB = 100f
+private const val MAX_BANDS = 12
+private const val DEFAULT_NEW_BAND_HZ = 500.0
+private const val MAX_NEW_BAND_HZ = 16_000.0
+
+/**
+ * The curve is drawn for a nominal rate rather than the file's.
+ *
+ * Filter shapes barely move between 44.1 and 48 kHz below a few kilohertz, and the
+ * dialog can be opened with nothing playing, when there is no real rate to use.
+ */
+private const val CURVE_SAMPLE_RATE = 48_000
+private val EQ_MAX_HEIGHT = 480.dp
 private const val REPLAY_GAIN_MIN_DB = -18f
 private val LYRICS_MAX_HEIGHT = 320.dp

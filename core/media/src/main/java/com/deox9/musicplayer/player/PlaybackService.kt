@@ -78,7 +78,7 @@ class PlaybackService : MediaSessionService() {
     private var replayGainDb: Float = 0f
     private var transitionVolumeMultiplier: Float = 1f
     private var eqEnabled: Boolean = false
-    private var eqBandLevels: List<Int> = List(10) { 0 }
+    private var eqBands: List<EqBand> = emptyList()
     private val audioProcessor = DeoAudioProcessor()
 
     /**
@@ -202,7 +202,7 @@ class PlaybackService : MediaSessionService() {
                 replayGainEnabled = settings.replayGainEnabled
                 replayGainDb = settings.replayGainDb
                 eqEnabled = settings.eqEnabled
-                eqBandLevels = settings.eqBandLevels
+                eqBands = settings.eqBands
                 applyAudioChain()
 
                 // ExoPlayer advances between items gaplessly by default. The previous
@@ -504,7 +504,7 @@ class PlaybackService : MediaSessionService() {
         audioProcessor.setConfig(
             AudioChainConfig(
                 gainDb = if (replayGainEnabled) effectiveGainDb() else 0.0,
-                bands = if (eqEnabled) EqBand.fromGraphicLevels(eqBandLevels) else emptyList(),
+                bands = if (eqEnabled) eqBands else emptyList(),
                 // Always on. It costs a few milliseconds of latency and is the only
                 // thing standing between a boost and a clipped output.
                 limiterEnabled = true,
