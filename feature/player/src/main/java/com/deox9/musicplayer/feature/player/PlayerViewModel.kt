@@ -4,6 +4,7 @@ package com.deox9.musicplayer.feature.player
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.deox9.musicplayer.audio.EqBand
+import com.deox9.musicplayer.audio.SignalChain
 import com.deox9.musicplayer.library.FavouritesRepository
 import com.deox9.musicplayer.library.LocalMusicRepository
 import com.deox9.musicplayer.library.PlaylistInfo
@@ -12,6 +13,7 @@ import com.deox9.musicplayer.lyrics.LyricsData
 import com.deox9.musicplayer.lyrics.LyricsRepository
 import com.deox9.musicplayer.player.PlaybackConnection
 import com.deox9.musicplayer.player.PlaybackState
+import com.deox9.musicplayer.player.SignalChainReporter
 import com.deox9.musicplayer.settings.AppSettings
 import com.deox9.musicplayer.settings.AppSettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -39,9 +41,13 @@ class PlayerViewModel @Inject constructor(
     private val libraryRepository: RoomLibraryRepository,
     private val lyricsRepository: LyricsRepository,
     private val settingsRepository: AppSettingsRepository,
+    signalChainReporter: SignalChainReporter,
 ) : ViewModel() {
 
     val state: StateFlow<PlaybackState> = playback.state
+
+    /** What the audio path is doing, for the signal-chain readout. */
+    val signalChain: StateFlow<SignalChain> = signalChainReporter.chain
 
     val favourites: StateFlow<Set<String>> = favouritesRepository.observe()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptySet())

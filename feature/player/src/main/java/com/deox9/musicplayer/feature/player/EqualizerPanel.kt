@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import com.deox9.musicplayer.audio.EqBand
 import com.deox9.musicplayer.audio.EqBandType
 import com.deox9.musicplayer.audio.EqResponse
+import com.deox9.musicplayer.audio.SignalChain
 import kotlin.math.log10
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -241,3 +242,59 @@ private const val MAX_Q = 18.0
 private const val CURVE_RANGE_DB = 24.0
 private const val CURVE_STROKE = 3f
 private val CURVE_HEIGHT = 140.dp
+
+/**
+ * What the audio is passing through, in order.
+ *
+ * Source, decoder, each processing stage, then the output the device actually
+ * accepted — which is not always the one that was asked for, since a device may
+ * refuse float or resample. Everything else in the player asserts things about the
+ * signal; this is where those claims can be checked.
+ */
+@Composable
+internal fun SignalChainView(chain: SignalChain) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        ChainRow("Source", chain.source?.describe() ?: "not playing")
+        ChainRow("Decoder", chain.decoderName ?: "—")
+
+        if (chain.stages.isNotEmpty()) {
+            HorizontalDivider()
+            chain.stages.forEach { stage ->
+                ChainRow(
+                    label = stage.name,
+                    value = stage.detail,
+                    // Dimmed rather than hidden: an inactive stage still says
+                    // something, and a stage missing from the list cannot be told
+                    // apart from one that failed to load.
+                    dimmed = !stage.active,
+                )
+            }
+            HorizontalDivider()
+        }
+
+        ChainRow("Output", chain.output?.describe() ?: "—")
+    }
+}
+
+@Composable
+private fun ChainRow(label: String, value: String, dimmed: Boolean = false) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (dimmed) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+        )
+    }
+}

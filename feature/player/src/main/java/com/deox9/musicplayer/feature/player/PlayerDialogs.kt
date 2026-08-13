@@ -87,6 +87,7 @@ internal fun PlayerDialogs(
             viewModel = viewModel,
         )
         PlayerDialog.Equalizer -> EqualizerDialog(onDismiss = onDismiss, viewModel = viewModel)
+        PlayerDialog.SignalChain -> SignalChainDialog(onDismiss = onDismiss, viewModel = viewModel)
     }
 }
 
@@ -132,6 +133,13 @@ internal fun NowPlayingMenu(
             onClick = {
                 onDismiss()
                 onViewAlbum(session?.album.orEmpty().trim())
+            },
+        )
+        DropdownMenuItem(
+            text = { Text("Signal chain") },
+            onClick = {
+                onDismiss()
+                onRequestDialog(PlayerDialog.SignalChain)
             },
         )
         DropdownMenuItem(
@@ -463,6 +471,20 @@ private fun AudioSettingsDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) { Text("Done") }
+        },
+    )
+}
+
+@Composable
+private fun SignalChainDialog(onDismiss: () -> Unit, viewModel: PlayerViewModel) {
+    val chain by viewModel.signalChain.collectAsState()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Signal chain") },
+        text = { SignalChainView(chain) },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
         },
     )
 }

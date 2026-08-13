@@ -16,4 +16,5 @@ internal enum class PlayerDialog {
     Lyrics,
     AudioSettings,
     Equalizer,
+    SignalChain,
 }

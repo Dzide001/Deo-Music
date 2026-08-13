@@ -8,12 +8,15 @@ import android.provider.MediaStore
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.session.MediaSession
@@ -21,6 +24,8 @@ import androidx.media3.session.MediaSessionService
 import com.deox9.musicplayer.audio.AudioChainConfig
 import com.deox9.musicplayer.audio.EqBand
 import com.deox9.musicplayer.audio.ReplayGain
+import com.deox9.musicplayer.audio.StreamFormat
+import com.deox9.musicplayer.audio.codecLabelFor
 import com.deox9.musicplayer.database.dao.LibraryDao
 import com.deox9.musicplayer.library.AlbumArt
 import com.deox9.musicplayer.library.RecommendationSignalsRepository
@@ -62,6 +67,10 @@ class PlaybackService : MediaSessionService() {
      */
     @Inject
     lateinit var libraryDao: LibraryDao
+
+    /** Shared with the UI, which shows what the audio path is actually doing. */
+    @Inject
+    lateinit var signalChainReporter: SignalChainReporter
     private var mediaSession: MediaSession? = null
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -135,6 +144,8 @@ class PlaybackService : MediaSessionService() {
             )
             .setHandleAudioBecomingNoisy(true)
             .build()
+
+        player.addAnalyticsListener(signalChainListener())
 
         player.addListener(object : Player.Listener {
             /**
@@ -305,6 +316,67 @@ class PlaybackService : MediaSessionService() {
                     .build()
             )
             .build()
+    }
+
+    /**
+     * Fills in the parts of the chain only the renderer knows.
+     *
+     * These are the same callbacks the gapless measurement used, which is why they are
+     * trusted here: onAudioTrackInitialized is the sink's real output configuration
+     * rather than what was asked for, and asking is not the same as getting — a device
+     * may refuse float output or resample.
+     */
+    private fun signalChainListener() = object : AnalyticsListener {
+        override fun onAudioInputFormatChanged(
+            eventTime: AnalyticsListener.EventTime,
+            format: Format,
+            decoderReuseEvaluation: DecoderReuseEvaluation?,
+        ) {
+            signalChainReporter.setSource(
+                StreamFormat(
+                    codec = codecLabelFor(format.sampleMimeType),
+                    sampleRateHz = format.sampleRate.takeIf { it != Format.NO_VALUE },
+                    channelCount = format.channelCount.takeIf { it != Format.NO_VALUE },
+                    bitrateKbps = format.bitrate.takeIf { it != Format.NO_VALUE }?.div(BITS_PER_KILOBIT),
+                ),
+            )
+        }
+
+        override fun onAudioDecoderInitialized(
+            eventTime: AnalyticsListener.EventTime,
+            decoderName: String,
+            initializedTimestampMs: Long,
+            initializationDurationMs: Long,
+        ) {
+            signalChainReporter.setDecoder(decoderName)
+        }
+
+        override fun onAudioTrackInitialized(
+            eventTime: AnalyticsListener.EventTime,
+            audioTrackConfig: AudioSink.AudioTrackConfig,
+        ) {
+            signalChainReporter.setOutput(
+                StreamFormat(
+                    sampleRateHz = audioTrackConfig.sampleRate,
+                    bitDepth = bitDepthOf(audioTrackConfig.encoding),
+                ),
+            )
+        }
+    }
+
+    /**
+     * The output encoding as a bit depth, where it has one.
+     *
+     * Null for anything compressed or passed through: those have no depth to report,
+     * and inventing one would be the same mistake as claiming an MP3 is 16-bit.
+     */
+    private fun bitDepthOf(encoding: Int): Int? = when (encoding) {
+        C.ENCODING_PCM_8BIT -> 8
+        C.ENCODING_PCM_16BIT, C.ENCODING_PCM_16BIT_BIG_ENDIAN -> 16
+        C.ENCODING_PCM_24BIT, C.ENCODING_PCM_24BIT_BIG_ENDIAN -> 24
+        C.ENCODING_PCM_32BIT, C.ENCODING_PCM_32BIT_BIG_ENDIAN -> 32
+        C.ENCODING_PCM_FLOAT -> 32
+        else -> null
     }
 
     private fun persistCurrentSession(player: Player) {
@@ -508,15 +580,15 @@ class PlaybackService : MediaSessionService() {
     }
 
     private fun applyAudioChain() {
-        audioProcessor.setConfig(
-            AudioChainConfig(
-                gainDb = if (replayGainEnabled) effectiveGainDb() else 0.0,
-                bands = if (eqEnabled) eqBands else emptyList(),
-                // Always on. It costs a few milliseconds of latency and is the only
-                // thing standing between a boost and a clipped output.
-                limiterEnabled = true,
-            ),
+        val config = AudioChainConfig(
+            gainDb = if (replayGainEnabled) effectiveGainDb() else 0.0,
+            bands = if (eqEnabled) eqBands else emptyList(),
+            // Always on. It costs a few milliseconds of latency and is the only
+            // thing standing between a boost and a clipped output.
+            limiterEnabled = true,
         )
+        audioProcessor.setConfig(config)
+        signalChainReporter.setStages(config, audioProcessor.limiterReductionDb)
     }
 
     /**
@@ -587,6 +659,9 @@ class PlaybackService : MediaSessionService() {
     }
 
     companion object {
+        /** Media3 reports bitrate in bits per second. */
+        private const val BITS_PER_KILOBIT = 1000
+
         /**
          * Control switch for the gapless measurement.
          *
