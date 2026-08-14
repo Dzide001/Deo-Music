@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -38,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -498,14 +500,23 @@ private fun SignalChainDialog(onDismiss: () -> Unit, viewModel: PlayerViewModel)
 }
 
 @Composable
-private fun SettingSwitch(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+internal fun SettingSwitch(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            // On the Row, not the Switch. With the toggle on the Switch alone the
+            // label and the control are two separate stops, and the control has no
+            // name — a screen reader announces "switch, off" without ever saying
+            // what it switches. toggleable merges the row into one node, which also
+            // makes the whole width the target rather than the switch alone.
+            .toggleable(value = checked, onValueChange = onChange, role = Role.Switch),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label)
-        Switch(checked = checked, onCheckedChange = onChange)
+        // null, so the Switch does not also claim the toggle for itself and undo
+        // the merge by becoming independently focusable.
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 
