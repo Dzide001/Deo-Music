@@ -21,6 +21,8 @@ class RoomLibraryRepository @Inject constructor(
     private val dao: LibraryDao,
 ) {
 
+    suspend fun deletePlaylist(playlistId: Long) = dao.deletePlaylist(playlistId)
+
     fun observeTracks(): Flow<List<LocalTrack>> =
         dao.observeTracksWithNames().map { rows -> rows.map(TrackWithNames::toLocalTrack) }
 

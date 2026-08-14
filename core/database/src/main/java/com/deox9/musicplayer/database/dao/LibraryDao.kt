@@ -425,6 +425,16 @@ interface LibraryDao {
     @Query("SELECT * FROM favourites")
     suspend fun allFavourites(): List<FavouriteEntity>
 
+    /**
+     * Removes a playlist. Its entries go with it, by foreign key.
+     *
+     * A MediaStore-imported playlist will come back on the next scan, since that
+     * import is a mirror rather than a sync — deleting the mirror does not delete
+     * what it reflects.
+     */
+    @Query("DELETE FROM playlists WHERE id = :playlistId")
+    suspend fun deletePlaylist(playlistId: Long)
+
     /** The track's own path, for reading tags or embedded art out of the file. */
     @Query("SELECT filePath FROM tracks WHERE mediaUri = :mediaUri LIMIT 1")
     suspend fun filePathFor(mediaUri: String): String?

@@ -55,6 +55,27 @@ class LibraryViewModel @Inject constructor(
     private val _transferStatus = MutableStateFlow<String?>(null)
     val transferStatus: StateFlow<String?> = _transferStatus.asStateFlow()
 
+    /**
+     * Counts changes to the playlists, for screens that need to re-read them.
+     *
+     * A counter rather than the status message, which was the first attempt and was
+     * wrong: deleting two playlists produces the same sentence twice, and a key that
+     * does not change does not re-run the read. The list then showed rows that were
+     * already gone from the database.
+     */
+    private val _playlistRevision = MutableStateFlow(0)
+    val playlistRevision: StateFlow<Int> = _playlistRevision.asStateFlow()
+
+    fun deletePlaylist(playlistId: Long, name: String) {
+        viewModelScope.launch {
+            libraryRepository.deletePlaylist(playlistId)
+            // Reuses the transfer status, which is already what this screen watches
+            // to know its list is stale.
+            _transferStatus.value = "Deleted $name."
+            _playlistRevision.value += 1
+        }
+    }
+
     fun clearTransferStatus() {
         _transferStatus.value = null
     }
@@ -79,6 +100,7 @@ class LibraryViewModel @Inject constructor(
             _transferStatus.value = runCatching {
                 playlistTransfer.import(name, text).summary()
             }.getOrElse { "Could not import: ${it.message}" }
+            _playlistRevision.value += 1
         }
     }
 

@@ -94,6 +94,8 @@ fun PlaylistsScreen(
     val context = LocalContext.current
     var selected by remember { mutableStateOf<PlaylistInfo?>(null) }
     var exportTarget by remember { mutableStateOf<PlaylistInfo?>(null) }
+    var pendingDelete by remember { mutableStateOf<PlaylistInfo?>(null) }
+    val status by viewModel.transferStatus.collectAsState()
     val createPlaylistFile = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("audio/x-mpegurl"),
     ) { uri ->
@@ -107,11 +109,13 @@ fun PlaylistsScreen(
     // A one-shot read from the index rather than a live StateFlow, matching the
     // existing screen structure; the scanner imports MediaStore playlists into the
     // schema as part of every scan.
-    val playlists by produceState<List<PlaylistInfo>>(initialValue = emptyList()) {
+    // Re-read when a transfer changes them: importing wrote a playlist the screen
+    // had already loaded past, so it did not appear until the tab was left and
+    // returned to — which looks exactly like the import having failed.
+    val revision by viewModel.playlistRevision.collectAsState()
+    val playlists by produceState<List<PlaylistInfo>>(initialValue = emptyList(), revision) {
         value = viewModel.playlists()
     }
-
-    val status by viewModel.transferStatus.collectAsState()
 
     val openPlaylist = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
@@ -122,12 +126,31 @@ fun PlaylistsScreen(
         }.getOrNull()
         // Named after the file, because a playlist called "Imported" tells you
         // nothing once you have imported two.
-        val name = uri.lastPathSegment
-            ?.substringAfterLast('/')
-            ?.substringBeforeLast('.')
-            ?.takeIf { it.isNotBlank() }
-            ?: "Imported playlist"
+        //
+        // Asked for by name rather than taken from the URI's last segment: a
+        // document URI's last segment is an opaque id, so that produced playlists
+        // called things like "1242". Only DISPLAY_NAME is the file's actual name.
+        val name = displayNameOf(context, uri)
         if (text != null) viewModel.importPlaylist(name, text)
+    }
+
+    pendingDelete?.let { playlist ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("Delete ${playlist.name}?") },
+            // Says what survives, because "delete playlist" reads to a lot of people
+            // as "delete the songs in it".
+            text = { Text("The playlist is removed. The tracks in it stay in your library.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deletePlaylist(playlist.id, playlist.name)
+                        pendingDelete = null
+                    },
+                ) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("Cancel") } },
+        )
     }
 
     ListDetailPane(
@@ -171,6 +194,7 @@ fun PlaylistsScreen(
                     exportTarget = playlist
                     createPlaylistFile.launch("${playlist.name}.m3u8")
                 },
+                onDelete = { pendingDelete = it },
             )
         }
     }
@@ -184,6 +208,7 @@ private fun PlaylistsList(
     listState: LazyListState,
     onSelect: (PlaylistInfo) -> Unit,
     onExport: (PlaylistInfo) -> Unit,
+    onDelete: (PlaylistInfo) -> Unit,
 ) {
     val filtered = remember(playlists, searchQuery, sortOption) {
         val searched = if (searchQuery.isBlank()) {
@@ -236,11 +261,15 @@ private fun PlaylistsList(
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = "${playlist.trackCount} tracks",
+                        text = pluralTracks(playlist.trackCount),
                         style = MaterialTheme.typography.labelMedium
                     )
                 }
-                Text("Open")
+                // A visible control, not only the accessibility action. The action
+                // alone shipped in the previous commit, which left exporting
+                // reachable by screen reader and by nothing else.
+                TextButton(onClick = { onExport(playlist) }) { Text("Export") }
+                TextButton(onClick = { onDelete(playlist) }) { Text("Delete") }
             }
             HorizontalDivider()
         }
@@ -412,7 +441,7 @@ private fun GenresList(
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = "${genre.trackCount} tracks",
+                        text = pluralTracks(genre.trackCount),
                         style = MaterialTheme.typography.labelSmall
                     )
                 }
@@ -1575,3 +1604,23 @@ private const val SEARCH_DEBOUNCE_MS = 220L
 
 /** A library track as the minimum the queue needs. */
 private fun LocalTrack.asQueued() = QueuedTrack(uri = contentUri, title = title, artist = artist)
+
+/** "1 track", not "1 tracks". */
+private fun pluralTracks(count: Int): String =
+    if (count == 1) "1 track" else "$count tracks"
+
+/**
+ * The name a document actually has, as opposed to the id in its URI.
+ *
+ * A SAF document URI ends in a provider-specific id — "1242" on this device — so
+ * reading the last path segment names an imported playlist after a number.
+ */
+private fun displayNameOf(context: android.content.Context, uri: android.net.Uri): String {
+    val name = runCatching {
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val column = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (column >= 0 && cursor.moveToFirst()) cursor.getString(column) else null
+        }
+    }.getOrNull()
+    return name?.substringBeforeLast('.')?.takeIf { it.isNotBlank() } ?: "Imported playlist"
+}
