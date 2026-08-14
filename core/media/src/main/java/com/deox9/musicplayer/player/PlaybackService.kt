@@ -5,6 +5,7 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import android.provider.MediaStore
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
@@ -81,6 +82,9 @@ class PlaybackService : MediaSessionService() {
 
     @Inject
     lateinit var outputRouteMonitor: OutputRouteMonitor
+
+    @Inject
+    lateinit var sleepTimer: SleepTimer
     private var mediaSession: MediaSession? = null
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -90,6 +94,8 @@ class PlaybackService : MediaSessionService() {
     private var positionPersistJob: Job? = null
     private var settingsJob: Job? = null
     private var routeJob: Job? = null
+    private var sleepTimerJob: Job? = null
+    private var pendingSleepJob: Job? = null
     private var skipFadeJob: Job? = null
     private var endOfTrackFadeJob: Job? = null
     private var crossfade: CrossfadeSettings = CrossfadeSettings()
@@ -257,6 +263,10 @@ class PlaybackService : MediaSessionService() {
             .build()
 
         restoreLastSession()
+
+        sleepTimerJob = mainScope.launch {
+            sleepTimer.state.collect { state -> armSleepTimer(player, state) }
+        }
 
         outputRouteMonitor.start()
         routeJob = mainScope.launch {
@@ -524,6 +534,61 @@ class PlaybackService : MediaSessionService() {
     private fun stopPositionPersistence() {
         positionPersistJob?.cancel()
         positionPersistJob = null
+    }
+
+    /**
+     * Waits out the sleep timer, then fades down and pauses.
+     *
+     * Pause rather than stop, so the queue and position survive — someone who set a
+     * timer and stayed awake should be able to press play and carry on, not find
+     * their place gone.
+     *
+     * The fade is the reason this does not simply schedule a pause: cutting the
+     * music dead is what wakes people up, which is the opposite of what a sleep
+     * timer is for.
+     */
+    private fun armSleepTimer(player: Player, state: SleepTimerState) {
+        pendingSleepJob?.cancel()
+        if (!state.isActive) {
+            // Cancelling the timer must also release a fade it had already begun, or
+            // the music would stay quiet with nothing left to bring it back.
+            audioProcessor.clearFade()
+            return
+        }
+
+        pendingSleepJob = mainScope.launch {
+            val untilExpiry = state.remainingMs(SystemClock.elapsedRealtime()) ?: return@launch
+            // The fade has to finish as the timer expires, so it starts before it.
+            delay((untilExpiry - SleepTimer.FADE_OUT_MS).coerceAtLeast(0L))
+
+            if (state.finishTrack) {
+                // Nothing to fade yet: the stop waits for the track to end, and
+                // Media3 reports that as a transition or an ended state.
+                awaitTrackEnd(player)
+            } else {
+                audioProcessor.startFade(crossfade.curve, FadeDirection.Out, SleepTimer.FADE_OUT_MS)
+                delay(SleepTimer.FADE_OUT_MS.toLong())
+            }
+
+            player.pause()
+            // Released after the pause, so the next play does not start silent.
+            audioProcessor.clearFade()
+            sleepTimer.cancel()
+        }
+    }
+
+    /** Suspends until the current track finishes or playback stops. */
+    private suspend fun awaitTrackEnd(player: Player) {
+        while (player.isPlaying) {
+            val remaining = player.duration.takeIf { it != C.TIME_UNSET && it > 0 }
+                ?.minus(player.currentPosition)
+                ?: break
+            if (remaining <= SLEEP_POLL_MS) {
+                delay(remaining.coerceAtLeast(0L))
+                return
+            }
+            delay(SLEEP_POLL_MS)
+        }
     }
 
     /**
@@ -808,6 +873,8 @@ class PlaybackService : MediaSessionService() {
         cancelFades()
         settingsJob?.cancel()
         routeJob?.cancel()
+        sleepTimerJob?.cancel()
+        pendingSleepJob?.cancel()
         outputRouteMonitor.stop()
         mediaSession?.run {
             player.release()
@@ -834,5 +901,8 @@ class PlaybackService : MediaSessionService() {
         const val PROBE_ONLY = false
 
         const val SESSION_ID = "music-player-session"
+
+        /** How often the finish-the-track wait checks how much is left. */
+        private const val SLEEP_POLL_MS = 1_000L
     }
 }

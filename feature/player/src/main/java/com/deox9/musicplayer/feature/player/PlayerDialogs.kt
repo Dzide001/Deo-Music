@@ -4,9 +4,11 @@ package com.deox9.musicplayer.feature.player
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.SystemClock
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -31,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -54,7 +57,9 @@ import com.deox9.musicplayer.audio.OutputRoute
 import com.deox9.musicplayer.library.PlaylistInfo
 import com.deox9.musicplayer.lyrics.LyricsData
 import com.deox9.musicplayer.player.PlaybackState
+import com.deox9.musicplayer.player.SleepTimer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.URLEncoder
@@ -98,6 +103,8 @@ internal fun PlayerDialogs(
             viewModel = viewModel,
         )
         PlayerDialog.Equalizer -> EqualizerDialog(onDismiss = onDismiss, viewModel = viewModel)
+        PlayerDialog.SleepTimer -> SleepTimerDialog(onDismiss = onDismiss, viewModel = viewModel)
+
         PlayerDialog.SignalChain -> SignalChainDialog(onDismiss = onDismiss, viewModel = viewModel)
     }
 }
@@ -144,6 +151,13 @@ internal fun NowPlayingMenu(
             onClick = {
                 onDismiss()
                 onViewAlbum(session?.album.orEmpty().trim())
+            },
+        )
+        DropdownMenuItem(
+            text = { Text("Sleep timer") },
+            onClick = {
+                onDismiss()
+                onRequestDialog(PlayerDialog.SleepTimer)
             },
         )
         DropdownMenuItem(
@@ -809,4 +823,95 @@ private fun OutputProfileControls(
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+}
+
+/**
+ * Setting and cancelling the sleep timer.
+ *
+ * The remaining time is shown while one is running, because a timer you cannot see
+ * is one you have to re-set to check — and re-setting it is what people do, which
+ * quietly doubles the time they meant to give it.
+ */
+@Composable
+private fun SleepTimerDialog(onDismiss: () -> Unit, viewModel: PlayerViewModel) {
+    val timer by viewModel.sleepTimerState.collectAsState()
+    var finishTrack by remember { mutableStateOf(timer.finishTrack) }
+
+    // Recomputed each second so the countdown moves; the deadline itself does not
+    // tick, so nothing drifts if this recomposition is late.
+    var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+    LaunchedEffect(timer.isActive) {
+        while (timer.isActive) {
+            now = SystemClock.elapsedRealtime()
+            delay(1_000)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Sleep timer") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                val remaining = timer.remainingMs(now)
+                if (remaining != null) {
+                    Text(
+                        text = "Stopping in ${formatRemaining(remaining)}",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    if (timer.finishTrack) {
+                        Text(
+                            text = "Will finish the current track first.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    Text("Fades out and pauses. Your place is kept.")
+                }
+
+                SettingSwitch(
+                    label = "Finish the current track",
+                    checked = finishTrack,
+                    onChange = { finishTrack = it },
+                )
+
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SleepTimer.PRESET_MINUTES.forEach { minutes ->
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.startSleepTimer(minutes, finishTrack)
+                                onDismiss()
+                            },
+                        ) {
+                            Text("$minutes min")
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        dismissButton = {
+            if (timer.isActive) {
+                TextButton(
+                    onClick = {
+                        viewModel.cancelSleepTimer()
+                        onDismiss()
+                    },
+                ) { Text("Cancel timer") }
+            }
+        },
+    )
+}
+
+/** "1:05:00", "45:00" or "0:09" — leading units dropped when they are zero. */
+private fun formatRemaining(remainingMs: Long): String {
+    val totalSeconds = remainingMs / 1_000
+    val hours = totalSeconds / 3_600
+    val minutes = (totalSeconds % 3_600) / 60
+    val seconds = totalSeconds % 60
+    return if (hours > 0) {
+        "%d:%02d:%02d".format(hours, minutes, seconds)
+    } else {
+        "%d:%02d".format(minutes, seconds)
+    }
 }

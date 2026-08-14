@@ -17,6 +17,7 @@ import com.deox9.musicplayer.player.OutputRouteMonitor
 import com.deox9.musicplayer.player.PlaybackConnection
 import com.deox9.musicplayer.player.PlaybackState
 import com.deox9.musicplayer.player.SignalChainReporter
+import com.deox9.musicplayer.player.SleepTimer
 import com.deox9.musicplayer.settings.AppSettings
 import com.deox9.musicplayer.settings.AppSettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -46,12 +47,20 @@ class PlayerViewModel @Inject constructor(
     private val settingsRepository: AppSettingsRepository,
     signalChainReporter: SignalChainReporter,
     private val outputRouteMonitor: OutputRouteMonitor,
+    private val sleepTimer: SleepTimer,
 ) : ViewModel() {
 
     val state: StateFlow<PlaybackState> = playback.state
 
     /** What the audio path is doing, for the signal-chain readout. */
     val signalChain: StateFlow<SignalChain> = signalChainReporter.chain
+
+    val sleepTimerState = sleepTimer.state
+
+    fun startSleepTimer(minutes: Int, finishTrack: Boolean) =
+        sleepTimer.start(minutes * 60_000L, finishTrack)
+
+    fun cancelSleepTimer() = sleepTimer.cancel()
 
     /** Where audio is going, so the equaliser can say what it is editing. */
     val outputRoute = outputRouteMonitor.route

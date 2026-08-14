@@ -17,4 +17,5 @@ internal enum class PlayerDialog {
     AudioSettings,
     Equalizer,
     SignalChain,
+    SleepTimer,
 }
