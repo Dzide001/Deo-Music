@@ -17,6 +17,7 @@ import com.deox9.musicplayer.library.RoomLibraryRepository
 import com.deox9.musicplayer.library.TrackLoudness
 import com.deox9.musicplayer.player.PlaybackConnection
 import com.deox9.musicplayer.playlist.PlaylistTransfer
+import com.deox9.musicplayer.scanner.LibraryFilters
 import com.deox9.musicplayer.scanner.LibraryScanner
 import com.deox9.musicplayer.settings.AppSettings
 import com.deox9.musicplayer.settings.AppSettingsRepository
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -74,6 +76,17 @@ class LibraryViewModel @Inject constructor(
             _transferStatus.value = "Deleted $name."
             _playlistRevision.value += 1
         }
+    }
+
+    /**
+     * Hides a folder.
+     *
+     * Only the setting is written. The library screen watches the filters and
+     * rescans when they change, so hiding from here and unhiding from Settings both
+     * take effect the same way rather than through two different mechanisms.
+     */
+    fun hideFolder(path: String) {
+        viewModelScope.launch { settingsRepository.hideFolder(path) }
     }
 
     fun clearTransferStatus() {
@@ -132,8 +145,20 @@ class LibraryViewModel @Inject constructor(
     val genres: StateFlow<List<GenreInfo>> = libraryRepository.observeGenres()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
 
-    val folders: StateFlow<List<FolderInfo>> = libraryRepository.observeFolders()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
+    /**
+     * Folders, without the hidden ones.
+     *
+     * Filtered here as well as at scan time. The scan stops their tracks being
+     * indexed, but the folder row survives — so a folder someone had just hidden
+     * stayed on the list showing zero tracks, which reads as the hide not having
+     * worked.
+     */
+    val folders: StateFlow<List<FolderInfo>> = combine(
+        libraryRepository.observeFolders(),
+        settingsRepository.observe(),
+    ) { folders, settings ->
+        folders.filterNot { LibraryFilters.isHidden(it.path, settings.hiddenFolders) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
 
     val scanState: StateFlow<LibraryScanner.State> = scanner.state
 

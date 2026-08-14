@@ -285,7 +285,30 @@ fun FoldersScreen(
 ) {
     val context = LocalContext.current
     var selected by remember { mutableStateOf<FolderInfo?>(null) }
+    var pendingHide by remember { mutableStateOf<FolderInfo?>(null) }
     val folders by viewModel.folders.collectAsState()
+
+    pendingHide?.let { folder ->
+        AlertDialog(
+            onDismissRequest = { pendingHide = null },
+            title = { Text("Hide ${folder.name}?") },
+            text = {
+                Text(
+                    "Its ${folder.trackCount} tracks are left out of the library. " +
+                        "Nothing is deleted, and you can unhide it in Settings.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.hideFolder(folder.path)
+                        pendingHide = null
+                    },
+                ) { Text("Hide") }
+            },
+            dismissButton = { TextButton(onClick = { pendingHide = null }) { Text("Cancel") } },
+        )
+    }
 
     ListDetailPane(
         detail = selected?.let { folder ->
@@ -299,7 +322,8 @@ fun FoldersScreen(
             searchQuery = searchQuery,
             sortOption = sortOption,
             listState = listState,
-            onSelect = { selected = it }
+            onSelect = { selected = it },
+            onHide = { pendingHide = it },
         )
     }
 }
@@ -310,7 +334,8 @@ private fun FoldersList(
     searchQuery: String,
     sortOption: CollectionSortOption,
     listState: LazyListState,
-    onSelect: (FolderInfo) -> Unit
+    onSelect: (FolderInfo) -> Unit,
+    onHide: (FolderInfo) -> Unit,
 ) {
     val filtered = remember(folders, searchQuery, sortOption) {
         val searched = if (searchQuery.isBlank()) {
@@ -358,6 +383,10 @@ private fun FoldersList(
                     )
                 }
                 Text("${folder.trackCount}")
+                // The only way to hide a folder. The setting existed and was
+                // reachable from nowhere; the settings screen even told people to
+                // long-press here for a gesture that was never written.
+                TextButton(onClick = { onHide(folder) }) { Text("Hide") }
             }
             HorizontalDivider()
         }
@@ -914,8 +943,18 @@ fun LibraryScreen(
     // The launch-time scan runs before the permission dialog is answered, so a fresh
     // install would otherwise show an empty library until something else triggered a
     // rescan.
+    //
+    // Also keyed on the library filters, because they are applied while scanning:
+    // hiding a folder or raising the minimum length changes nothing on screen until
+    // a scan runs, and asking the user to go and find a rescan button for that is
+    // asking them to understand the implementation.
     val librarySettings by viewModel.settings.collectAsState()
-    LaunchedEffect(hasPermission, librarySettings.thoroughScanEnabled) {
+    LaunchedEffect(
+        hasPermission,
+        librarySettings.thoroughScanEnabled,
+        librarySettings.hiddenFolders,
+        librarySettings.minimumTrackDurationMs,
+    ) {
         if (hasPermission) {
             LibraryScanWorker.enqueue(context, thorough = librarySettings.thoroughScanEnabled)
         }

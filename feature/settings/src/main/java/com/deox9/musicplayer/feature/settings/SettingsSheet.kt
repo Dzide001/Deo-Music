@@ -11,7 +11,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -67,7 +69,15 @@ fun SettingsSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        // Scrollable, because it is no longer short. The sheet grew past the height
+        // of the screen as settings were added, and a Column does not scroll on its
+        // own — so everything below the fold, including the backup buttons and the
+        // library filters, was rendered and unreachable.
+        Column(
+            modifier = Modifier
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+        ) {
             Text(
                 text = "Settings",
                 style = MaterialTheme.typography.titleLarge,
@@ -415,7 +425,7 @@ private fun LibraryFilterSection(settings: AppSettings, viewModel: SettingsViewM
     Spacer(modifier = Modifier.height(8.dp))
     if (settings.hiddenFolders.isEmpty()) {
         Text(
-            text = "No folders hidden. Long-press a folder in the library to hide it.",
+            text = "No folders hidden. Use Hide on a folder in the library to leave it out.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -438,7 +448,7 @@ private fun LibraryFilterSection(settings: AppSettings, viewModel: SettingsViewM
             }
         }
         Text(
-            text = "Rescan the library for changes to take effect.",
+            text = "The library updates itself when you change this.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
