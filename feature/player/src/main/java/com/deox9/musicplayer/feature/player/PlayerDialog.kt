@@ -19,4 +19,5 @@ internal enum class PlayerDialog {
     SignalChain,
     SleepTimer,
     SpeedAndPitch,
+    AbLoop,
 }

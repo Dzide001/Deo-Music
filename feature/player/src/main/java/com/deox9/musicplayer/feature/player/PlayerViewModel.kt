@@ -16,6 +16,7 @@ import com.deox9.musicplayer.lyrics.LyricsRepository
 import com.deox9.musicplayer.player.OutputRouteMonitor
 import com.deox9.musicplayer.player.PlaybackConnection
 import com.deox9.musicplayer.player.PlaybackState
+import com.deox9.musicplayer.player.AbLoop
 import com.deox9.musicplayer.player.SignalChainReporter
 import com.deox9.musicplayer.player.SleepTimer
 import com.deox9.musicplayer.settings.AppSettings
@@ -48,6 +49,7 @@ class PlayerViewModel @Inject constructor(
     signalChainReporter: SignalChainReporter,
     private val outputRouteMonitor: OutputRouteMonitor,
     private val sleepTimer: SleepTimer,
+    private val abLoop: AbLoop,
 ) : ViewModel() {
 
     val state: StateFlow<PlaybackState> = playback.state
@@ -56,6 +58,16 @@ class PlayerViewModel @Inject constructor(
     val signalChain: StateFlow<SignalChain> = signalChainReporter.chain
 
     val sleepTimerState = sleepTimer.state
+
+    val abLoopState = abLoop.state
+
+    /** Marks the next loop point at wherever playback has reached. */
+    fun markAbLoop() {
+        val state = playback.state.value
+        abLoop.mark(state.positionMs, state.uri)
+    }
+
+    fun clearAbLoop() = abLoop.clear()
 
     fun startSleepTimer(minutes: Int, finishTrack: Boolean) =
         sleepTimer.start(minutes * 60_000L, finishTrack)

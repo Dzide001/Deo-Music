@@ -91,6 +91,9 @@ class PlaybackService : MediaSessionService() {
 
     @Inject
     lateinit var embeddedArtwork: EmbeddedArtwork
+
+    @Inject
+    lateinit var abLoop: AbLoop
     private var mediaSession: MediaSession? = null
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -102,6 +105,7 @@ class PlaybackService : MediaSessionService() {
     private var routeJob: Job? = null
     private var sleepTimerJob: Job? = null
     private var pendingSleepJob: Job? = null
+    private var loopWatchJob: Job? = null
     private var skipFadeJob: Job? = null
     private var endOfTrackFadeJob: Job? = null
     private var crossfade: CrossfadeSettings = CrossfadeSettings()
@@ -232,6 +236,8 @@ class PlaybackService : MediaSessionService() {
                     )
                 }
                 loadTrackGain(mediaItem)
+                // The points are positions in one track and mean nothing in another.
+                abLoop.clearIfTrackChanged(mediaItem?.mediaId.orEmpty())
                 previousMediaId = mediaItem?.mediaId
             }
 
@@ -601,7 +607,30 @@ class PlaybackService : MediaSessionService() {
         positionPersistJob = mainScope.launch {
             while (isActive) {
                 persistCurrentSession(player)
-                delay(1_000)
+                delay(POSITION_PERSIST_MS)
+            }
+        }
+        startLoopWatch(player)
+    }
+
+    /**
+     * Sends playback back to A when it runs past B.
+     *
+     * Polled, and far more often than the session is persisted: a loop checked once
+     * a second overshoots by up to a second, which on a two-bar phrase is most of
+     * the phrase. Media3 has no "loop this range" to ask for — repeat modes work on
+     * items, not on positions — so polling is the mechanism rather than a shortcut.
+     */
+    private fun startLoopWatch(player: Player) {
+        if (loopWatchJob?.isActive == true) return
+        loopWatchJob = mainScope.launch {
+            while (isActive) {
+                val loop = abLoop.state.value
+                val start = loop.startMs
+                if (start != null && loop.hasPassedEnd(player.currentPosition)) {
+                    player.seekTo(start)
+                }
+                delay(LOOP_POLL_MS)
             }
         }
     }
@@ -609,6 +638,8 @@ class PlaybackService : MediaSessionService() {
     private fun stopPositionPersistence() {
         positionPersistJob?.cancel()
         positionPersistJob = null
+        loopWatchJob?.cancel()
+        loopWatchJob = null
     }
 
     /**
@@ -979,5 +1010,16 @@ class PlaybackService : MediaSessionService() {
 
         /** How often the finish-the-track wait checks how much is left. */
         private const val SLEEP_POLL_MS = 1_000L
+
+        /** How often the session record is written while playing. */
+        private const val POSITION_PERSIST_MS = 1_000L
+
+        /**
+         * How often the loop end is checked.
+         *
+         * A tenth of the persist interval. The overshoot is bounded by this, and a
+         * second of overshoot on a two-bar phrase is most of the phrase.
+         */
+        private const val LOOP_POLL_MS = 100L
     }
 }

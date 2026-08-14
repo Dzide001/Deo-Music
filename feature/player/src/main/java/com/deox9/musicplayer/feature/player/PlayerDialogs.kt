@@ -16,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -59,6 +60,7 @@ import com.deox9.musicplayer.lyrics.LyricsData
 import com.deox9.musicplayer.player.PlaybackState
 import com.deox9.musicplayer.player.SleepTimer
 import com.deox9.musicplayer.settings.AppSettingsRepository
+import com.deox9.musicplayer.ui.formatDuration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -109,6 +111,8 @@ internal fun PlayerDialogs(
 
         PlayerDialog.SpeedAndPitch -> SpeedPitchDialog(onDismiss = onDismiss, viewModel = viewModel)
 
+        PlayerDialog.AbLoop -> AbLoopDialog(onDismiss = onDismiss, viewModel = viewModel)
+
         PlayerDialog.SignalChain -> SignalChainDialog(onDismiss = onDismiss, viewModel = viewModel)
     }
 }
@@ -155,6 +159,13 @@ internal fun NowPlayingMenu(
             onClick = {
                 onDismiss()
                 onViewAlbum(session?.album.orEmpty().trim())
+            },
+        )
+        DropdownMenuItem(
+            text = { Text("A–B repeat") },
+            onClick = {
+                onDismiss()
+                onRequestDialog(PlayerDialog.AbLoop)
             },
         )
         DropdownMenuItem(
@@ -1004,3 +1015,49 @@ private fun semitonesOf(ratio: Float): Double =
     SEMITONES_PER_OCTAVE * ln(ratio.toDouble()) / ln(2.0)
 
 private const val SEMITONES_PER_OCTAVE = 12.0
+
+/**
+ * Setting the two ends of a repeat.
+ *
+ * One button that cycles — start, end, clear — because that is how it is used:
+ * listen, tap where the phrase begins, listen, tap where it ends. Two separate
+ * controls would need labelling and would still be tapped in the wrong order.
+ */
+@Composable
+private fun AbLoopDialog(onDismiss: () -> Unit, viewModel: PlayerViewModel) {
+    val loop by viewModel.abLoopState.collectAsState()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("A–B repeat") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = when {
+                        loop.isActive ->
+                            "Repeating ${formatDuration(loop.startMs ?: 0L)} to " +
+                                "${formatDuration(loop.endMs ?: 0L)}."
+                        loop.isWaitingForEnd ->
+                            "Start set at ${formatDuration(loop.startMs ?: 0L)}. " +
+                                "Play on, then mark the end."
+                        else -> "Mark the start of the section you want to repeat."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Button(onClick = viewModel::markAbLoop) {
+                    Text(
+                        when {
+                            loop.isActive -> "Clear"
+                            loop.isWaitingForEnd -> "Mark end"
+                            else -> "Mark start"
+                        },
+                    )
+                }
+                if (loop.isActive || loop.isWaitingForEnd) {
+                    TextButton(onClick = viewModel::clearAbLoop) { Text("Cancel repeat") }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+    )
+}
