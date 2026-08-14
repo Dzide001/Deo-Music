@@ -99,6 +99,12 @@ class OutputRouteMonitor @Inject constructor(
             AudioDeviceInfo.TYPE_HDMI_ARC,
             -> OutputRouteType.Hdmi
 
+            // SCO is the mono voice channel used for calls; media goes over A2DP.
+            // A phone with Bluetooth connected reports both, and SCO names itself
+            // after the phone rather than the headset — so mapping it would add a
+            // second Bluetooth route that ties with the real one on precedence and
+            // can win, filing the headphones' profile under the phone's model.
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
             AudioDeviceInfo.TYPE_BUILTIN_EARPIECE,
             AudioDeviceInfo.TYPE_TELEPHONY,
             -> return null

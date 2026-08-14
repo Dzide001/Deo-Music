@@ -79,6 +79,7 @@ class OutputRouteMonitorTest {
         assertTrue("no outputs reported at all", devices.isNotEmpty())
 
         val ignorable = setOf(
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
             AudioDeviceInfo.TYPE_BUILTIN_EARPIECE,
             AudioDeviceInfo.TYPE_TELEPHONY,
         )
@@ -91,6 +92,32 @@ class OutputRouteMonitorTest {
         assertTrue(
             "unmapped output types: ${unexplained.map { it.type to it.productName }}",
             unexplained.isEmpty(),
+        )
+    }
+
+    /**
+     * With something connected, the speaker must lose. This is the whole feature:
+     * detection that never leaves the speaker would apply the wrong profile always.
+     */
+    @Test
+    fun aConnectedOutputBeatsTheSpeakerOnRealHardware() {
+        val manager = context.getSystemService(AudioManager::class.java)
+        val hasExternal = manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any {
+            it.type in setOf(
+                AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+                AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+                AudioDeviceInfo.TYPE_WIRED_HEADSET,
+                AudioDeviceInfo.TYPE_USB_HEADSET,
+                AudioDeviceInfo.TYPE_USB_DEVICE,
+            )
+        }
+        org.junit.Assume.assumeTrue("nothing connected to test against", hasExternal)
+
+        monitor.refresh()
+
+        assertTrue(
+            "still on the speaker: ${monitor.route.value}",
+            monitor.route.value.type != OutputRouteType.Speaker,
         )
     }
 
