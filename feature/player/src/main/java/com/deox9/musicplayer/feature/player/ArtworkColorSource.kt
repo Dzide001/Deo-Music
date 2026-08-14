@@ -5,8 +5,10 @@ import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.palette.graphics.Palette
@@ -23,13 +25,36 @@ import kotlinx.coroutines.withContext
  *
  * Null is a normal answer — no artwork, an unreadable URI, artwork with nothing but
  * greys in it. Callers fall back to the theme's own primary.
+ *
+ * The colour is held across a track change until the next one has been worked out.
+ * produceState was the obvious way to write this and it caused a visible flash on
+ * every skip: it resets its value to the initial one when a key changes, so the
+ * accent dropped to null — and the whole backdrop to the theme default — for as long
+ * as it took to read the file, decode a bitmap and run Palette over it. Then it
+ * snapped to the new colour. Holding the last answer means the backdrop changes once,
+ * when there is something to change it to.
  */
 @Composable
 internal fun rememberArtworkColor(artworkUri: String?, dark: Boolean): State<Color?> {
     val context = LocalContext.current
-    return produceState<Color?>(initialValue = null, key1 = artworkUri, key2 = dark) {
-        value = artworkColor(context, artworkUri, dark)
+    val color = remember { mutableStateOf<Color?>(null) }
+
+    LaunchedEffect(artworkUri, dark) {
+        if (artworkUri.isNullOrBlank()) {
+            // Nothing to wait for, so there is no flash to avoid — and holding the
+            // previous cover's colour over a track that has no art of its own would
+            // be worse than showing the theme's.
+            color.value = null
+            return@LaunchedEffect
+        }
+        val resolved = artworkColor(context, artworkUri, dark)
+        // Only replaced when something was found. A cover that yields no usable
+        // swatch keeps the previous accent rather than flashing to the default and
+        // back on the track after it.
+        if (resolved != null) color.value = resolved
     }
+
+    return color
 }
 
 private suspend fun artworkColor(context: Context, artworkUri: String?, dark: Boolean): Color? {

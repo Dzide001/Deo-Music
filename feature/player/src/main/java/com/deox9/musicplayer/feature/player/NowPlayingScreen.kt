@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.deox9.musicplayer.feature.player
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -92,7 +94,14 @@ fun ExpandedNowPlayingScreen(
     val favourites by viewModel.favourites.collectAsState()
     val dark = isSystemInDarkTheme()
     val artworkColor by rememberArtworkColor(session?.albumArtUri, dark)
-    val accent = rememberPlayerAccent(artworkColor)
+    // Eased rather than switched. Even a correct colour change is a full-screen
+    // change, and a full-screen change that happens in one frame reads as a flash.
+    val targetAccent = rememberPlayerAccent(artworkColor)
+    val accent by animateColorAsState(
+        targetValue = targetAccent,
+        animationSpec = tween(durationMillis = ACCENT_FADE_MS),
+        label = "accent",
+    )
 
     var dialog by remember { mutableStateOf(PlayerDialog.None) }
     var showMoreMenu by remember { mutableStateOf(false) }
@@ -324,6 +333,8 @@ private fun NowPlayingControls(
  * other half got the effect. A gradient from the same extracted colour looks
  * deliberate everywhere.
  */
+private const val ACCENT_FADE_MS = 450
+
 private fun Modifier.artworkBackdrop(accent: Color): Modifier = this.then(
     Modifier.background(
         Brush.linearGradient(
