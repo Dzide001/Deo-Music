@@ -90,6 +90,15 @@ data class AppSettings(
      * time they open the lyrics panel.
      */
     val onlineLyricsEnabled: Boolean = false,
+    /**
+     * Whether playback picks up again after a call or another app takes over.
+     *
+     * Defaults to on, which is what the app already did and what most people expect.
+     * Off is for the case that makes the setting worth having: a podcast or a mix
+     * you were half-listening to, where having it start again ten minutes after a
+     * call ended is startling rather than helpful.
+     */
+    val resumeAfterInterruption: Boolean = true,
 )
 
 class AppSettingsRepository(private val context: Context) {
@@ -114,6 +123,7 @@ class AppSettingsRepository(private val context: Context) {
                 ),
                 thoroughScanEnabled = prefs[Keys.THOROUGH_SCAN_ENABLED] ?: false,
                 onlineLyricsEnabled = prefs[Keys.ONLINE_LYRICS_ENABLED] ?: false,
+                resumeAfterInterruption = prefs[Keys.RESUME_AFTER_INTERRUPTION] ?: true,
                 outputProfiles = OutputProfiles(
                     profiles = decodeOutputProfiles(prefs[Keys.OUTPUT_PROFILES_JSON]),
                     enabled = prefs[Keys.OUTPUT_PROFILES_ENABLED] ?: false,
@@ -297,8 +307,15 @@ class AppSettingsRepository(private val context: Context) {
             prefs[Keys.EQ_BANDS_JSON] = encodeParametricBands(emptyList())
             prefs[Keys.THOROUGH_SCAN_ENABLED] = false
             prefs[Keys.ONLINE_LYRICS_ENABLED] = false
+            prefs[Keys.RESUME_AFTER_INTERRUPTION] = true
             prefs[Keys.OUTPUT_PROFILES_ENABLED] = false
             prefs[Keys.OUTPUT_PROFILES_JSON] = encodeOutputProfiles(emptyMap())
+        }
+    }
+
+    suspend fun setResumeAfterInterruption(enabled: Boolean) {
+        context.appSettingsDataStore.edit { prefs ->
+            prefs[Keys.RESUME_AFTER_INTERRUPTION] = enabled
         }
     }
 
@@ -477,6 +494,7 @@ class AppSettingsRepository(private val context: Context) {
         val EQ_BANDS_JSON = stringPreferencesKey("eq_bands_json")
         val THOROUGH_SCAN_ENABLED = booleanPreferencesKey("thorough_scan_enabled")
         val ONLINE_LYRICS_ENABLED = booleanPreferencesKey("online_lyrics_enabled")
+        val RESUME_AFTER_INTERRUPTION = booleanPreferencesKey("resume_after_interruption")
         val OUTPUT_PROFILES_ENABLED = booleanPreferencesKey("output_profiles_enabled")
         val OUTPUT_PROFILES_JSON = stringPreferencesKey("output_profiles_json")
     }

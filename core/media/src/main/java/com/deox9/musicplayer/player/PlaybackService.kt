@@ -104,6 +104,7 @@ class PlaybackService : MediaSessionService() {
     private var replayGainDb: Float = 0f
     private var eqEnabled: Boolean = false
     private var eqBands: List<EqBand> = emptyList()
+    private var resumeAfterInterruption: Boolean = true
     private var outputProfiles: OutputProfiles = OutputProfiles()
     private var outputRoute: OutputRoute = OutputRoute.Speaker
     private val audioProcessor = DeoAudioProcessor()
@@ -184,6 +185,14 @@ class PlaybackService : MediaSessionService() {
                 true
             )
             .setHandleAudioBecomingNoisy(true)
+            // Keeps the CPU alive while playing with the screen off. The permission
+            // was already declared and never used, so playback was relying on the
+            // foreground service alone — which holds up under normal conditions and
+            // not under Doze, where it stutters or stops on exactly the long
+            // screen-off listening this is for. WAKE_MODE_LOCAL rather than NETWORK:
+            // local files need no wifi lock, and taking one would cost battery for
+            // nothing.
+            .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
 
         player.addAnalyticsListener(signalChainListener())
@@ -230,6 +239,25 @@ class PlaybackService : MediaSessionService() {
              */
             override fun onPlayerError(error: PlaybackException) {
                 handlePlayerError(error)
+            }
+
+            /**
+             * Honours the choice about resuming after a call or another app.
+             *
+             * Media3 always resumes when it gets audio focus back, and attaches
+             * AUDIO_FOCUS_LOSS as the reason to both halves — the pause and the
+             * resume. So a resume carrying that reason is the player restarting
+             * itself rather than the listener asking, which is the only case this
+             * should override.
+             */
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                if (
+                    playWhenReady &&
+                    !resumeAfterInterruption &&
+                    reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS
+                ) {
+                    player.pause()
+                }
             }
 
             override fun onEvents(player: Player, events: Player.Events) {
@@ -288,6 +316,7 @@ class PlaybackService : MediaSessionService() {
                 eqEnabled = settings.eqEnabled
                 eqBands = settings.eqBands
                 outputProfiles = settings.outputProfiles
+                resumeAfterInterruption = settings.resumeAfterInterruption
                 applyAudioChain()
 
                 // There is no gapless setting to honour any more. Playback here is

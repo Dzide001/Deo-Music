@@ -139,6 +139,18 @@ fun SettingsSheet(
                 )
             }
 
+            SettingToggleRow(
+                title = "Resume after calls",
+                checked = settings.resumeAfterInterruption,
+                onCheckedChange = viewModel::setResumeAfterInterruption,
+            )
+            Text(
+                text = "When a call or another app interrupts, pick up where you left " +
+                    "off once it finishes.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
             BackupSection(viewModel)
 
             Spacer(modifier = Modifier.height(16.dp))

@@ -85,6 +85,9 @@ class SettingsViewModel @Inject constructor(
             initialValue = AppSettings(),
         )
 
+    fun setResumeAfterInterruption(enabled: Boolean) =
+        edit { repository.setResumeAfterInterruption(enabled) }
+
     fun setWebHomeUrl(url: String) = edit { repository.setWebHomeUrl(url) }
 
     fun setCrossfadeOnSkip(enabled: Boolean) = edit { repository.setCrossfadeOnSkip(enabled) }
