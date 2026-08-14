@@ -158,7 +158,18 @@ class DeoAudioProcessor : BaseAudioProcessor() {
                 shorts.put(index, (clamped * SHORT_SCALE).toInt().toShort())
             }
         }
-        output.position(output.limit())
+        // Positioned by what was written, not by the buffer's limit.
+        //
+        // replaceOutputBuffer reuses its allocation when it is already big enough,
+        // and reuse goes through ByteBuffer.clear(), which sets the limit to the
+        // whole capacity rather than to the size asked for. Taking the limit as the
+        // amount written therefore emits the full capacity whenever this buffer is
+        // smaller than the largest one so far, and the difference is whatever the
+        // previous, longer buffer left in place — stale audio, appended to real
+        // audio, every time the decoder produces a short buffer. Found by the null
+        // test: 80000 bytes in, 81920 out, the excess exactly the shortfall on the
+        // final partial buffer.
+        output.position(bytes)
         output.flip()
     }
 
