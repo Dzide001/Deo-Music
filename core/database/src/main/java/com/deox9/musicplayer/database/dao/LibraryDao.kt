@@ -391,6 +391,56 @@ interface LibraryDao {
     @Query("SELECT * FROM favourites")
     fun observeFavourites(): Flow<List<FavouriteEntity>>
 
+    // ---- backup ---------------------------------------------------------------
+
+    /**
+     * Every track, with each identity a restore might match on.
+     *
+     * The whole table at once because a restore compares each saved reference
+     * against all of them, and doing that as a query per reference would be one
+     * round trip per track in every playlist.
+     */
+    @Query(
+        """
+        SELECT t.id AS id, t.mediaUri AS mediaUri, t.filePath AS filePath,
+               t.title AS title, ar.name AS artistName, al.title AS albumTitle,
+               t.durationMs AS durationMs
+        FROM tracks t
+        LEFT JOIN artists ar ON ar.id = t.artistId
+        LEFT JOIN albums al ON al.id = t.albumId
+        """,
+    )
+    suspend fun allTrackIdentities(): List<TrackIdentity>
+
+    @Query(
+        """
+        SELECT p.id AS id, p.name AS name, COUNT(e.trackId) AS trackCount
+        FROM playlists p
+        LEFT JOIN playlist_entries e ON e.playlistId = p.id
+        GROUP BY p.id
+        """,
+    )
+    suspend fun allPlaylists(): List<NamedCount>
+
+    @Query("SELECT * FROM favourites")
+    suspend fun allFavourites(): List<FavouriteEntity>
+
+    /**
+     * Play counts, counting only what was actually heard.
+     *
+     * A skip writes a history row too — that is what makes the recommendations work
+     * — so counting rows would report a track skipped twenty times as a favourite.
+     */
+    @Query(
+        """
+        SELECT trackId AS trackId, COUNT(*) AS playCount, MAX(playedAtMs) AS lastPlayedAtMs
+        FROM play_history
+        WHERE completed = 1
+        GROUP BY trackId
+        """,
+    )
+    suspend fun allPlayCounts(): List<TrackPlayCount>
+
     @Upsert
     suspend fun addFavourite(favourite: FavouriteEntity)
 

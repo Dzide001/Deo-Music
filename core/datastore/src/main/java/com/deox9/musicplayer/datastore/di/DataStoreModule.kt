@@ -2,6 +2,7 @@
 package com.deox9.musicplayer.datastore.di
 
 import android.content.Context
+import com.deox9.musicplayer.backup.BackupSettingsBridge
 import com.deox9.musicplayer.library.FavouritesRepository
 import com.deox9.musicplayer.library.RecommendationSignalsRepository
 import com.deox9.musicplayer.player.storage.PlaybackSessionRepository
@@ -29,6 +30,21 @@ object DataStoreModule {
     fun provideAppSettingsRepository(
         @ApplicationContext context: Context,
     ): AppSettingsRepository = AppSettingsRepository(context)
+
+    /**
+     * The settings half of a backup.
+     *
+     * Bound here rather than in :core:data because that module has no business
+     * depending on preference storage — the dependency would run the wrong way.
+     */
+    @Provides
+    @Singleton
+    fun provideBackupSettingsBridge(
+        repository: AppSettingsRepository,
+    ): BackupSettingsBridge = object : BackupSettingsBridge {
+        override suspend fun export(): Map<String, String> = repository.exportAll()
+        override suspend fun restore(values: Map<String, String>): Int = repository.importAll(values)
+    }
 
     @Provides
     @Singleton

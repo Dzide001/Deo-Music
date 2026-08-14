@@ -17,6 +17,7 @@ import com.deox9.musicplayer.audio.EqBandType
 import com.deox9.musicplayer.audio.OutputProfile
 import com.deox9.musicplayer.audio.OutputProfiles
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
@@ -119,6 +120,55 @@ class AppSettingsRepository(private val context: Context) {
                 )
             )
         }
+    }
+
+    /**
+     * Every stored preference as text, for a backup.
+     *
+     * Read straight off DataStore rather than off [AppSettings], so a preference
+     * added later is backed up without anyone remembering to add it here. The cost
+     * is that the type is not known — hence the marker on each value, which is what
+     * lets [importAll] put it back as the type it was.
+     */
+    suspend fun exportAll(): Map<String, String> {
+        val prefs = context.appSettingsDataStore.data.first()
+        return prefs.asMap().entries.associate { (key, value) ->
+            key.name to "${value.typeMarker()}:$value"
+        }
+    }
+
+    /**
+     * Writes exported preferences back, returning how many were applied.
+     *
+     * A value whose marker is missing or unknown is skipped rather than guessed at.
+     * Writing a string into a key the app reads as a boolean does not fail here — it
+     * fails much later, as a ClassCastException on a screen that has nothing to do
+     * with restoring.
+     */
+    suspend fun importAll(values: Map<String, String>): Int {
+        var applied = 0
+        context.appSettingsDataStore.edit { prefs ->
+            values.forEach { (name, encoded) ->
+                val marker = encoded.substringBefore(':', missingDelimiterValue = "")
+                val raw = encoded.substringAfter(':', missingDelimiterValue = "")
+                val wrote = when (marker) {
+                    "b" -> raw.toBooleanStrictOrNull()?.let { prefs[booleanPreferencesKey(name)] = it }
+                    "i" -> raw.toIntOrNull()?.let { prefs[intPreferencesKey(name)] = it }
+                    "f" -> raw.toFloatOrNull()?.let { prefs[floatPreferencesKey(name)] = it }
+                    "s" -> prefs[stringPreferencesKey(name)] = raw
+                    else -> null
+                }
+                if (wrote != null) applied++
+            }
+        }
+        return applied
+    }
+
+    private fun Any.typeMarker(): String = when (this) {
+        is Boolean -> "b"
+        is Int -> "i"
+        is Float -> "f"
+        else -> "s"
     }
 
     suspend fun setWebHomeUrl(url: String) {

@@ -72,3 +72,27 @@ data class TrackReplayGain(
     val replayGainAlbumDb: Float?,
     val replayGainAlbumPeak: Float?,
 )
+
+/**
+ * A track as a backup needs it: every way of naming it again later.
+ *
+ * Separate from [TrackWithNames] because a backup wants the file path — the one
+ * identifier that survives being restored onto a different phone — and does not want
+ * the album ids and disc numbers that only mean something in this database.
+ */
+data class TrackIdentity(
+    val id: Long,
+    val mediaUri: String,
+    val filePath: String?,
+    val title: String,
+    val artistName: String?,
+    val albumTitle: String?,
+    val durationMs: Long,
+)
+
+/** A track's play count and when it was last heard, for the backup. */
+data class TrackPlayCount(
+    val trackId: Long,
+    val playCount: Int,
+    val lastPlayedAtMs: Long,
+)
