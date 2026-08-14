@@ -151,6 +151,8 @@ fun SettingsSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
+            LibraryFilterSection(settings, viewModel)
+
             BackupSection(viewModel)
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -373,3 +375,72 @@ private fun defaultBackupName(): String {
 }
 
 private const val BACKUP_MIME = "application/json"
+
+/**
+ * What the library leaves out.
+ *
+ * A phone's audio is not all music. Voice notes, ringtones and game sounds land in
+ * the same MediaStore, and without this the library is something to scroll past
+ * rather than something to use.
+ */
+@Composable
+private fun LibraryFilterSection(settings: AppSettings, viewModel: SettingsViewModel) {
+    Spacer(modifier = Modifier.height(16.dp))
+    Text("Library", style = MaterialTheme.typography.titleSmall)
+
+    val minutes = settings.minimumTrackDurationMs / 1_000
+    Text(
+        text = if (minutes <= 0) {
+            "Every audio file is indexed, however short."
+        } else {
+            "Files shorter than $minutes seconds are skipped."
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Preset lengths rather than a slider: the useful thresholds are few and
+        // well known, and nobody wants to dial in 37 seconds.
+        listOf(0L, 30L, 60L, 90L).forEach { seconds ->
+            val selected = settings.minimumTrackDurationMs == seconds * 1_000
+            OutlinedButton(
+                onClick = { viewModel.setMinimumTrackDurationMs(seconds * 1_000) },
+                enabled = !selected,
+            ) {
+                Text(if (seconds == 0L) "All" else "${seconds}s")
+            }
+        }
+    }
+
+    Spacer(modifier = Modifier.height(8.dp))
+    if (settings.hiddenFolders.isEmpty()) {
+        Text(
+            text = "No folders hidden. Long-press a folder in the library to hide it.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    } else {
+        Text("Hidden folders", style = MaterialTheme.typography.bodyMedium)
+        settings.hiddenFolders.sorted().forEach { folder ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    // The tail, because the useful part of a path is its end and the
+                    // start is the same for everything on the device.
+                    text = folder.substringAfterLast('/').ifBlank { folder },
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { viewModel.unhideFolder(folder) }) { Text("Unhide") }
+            }
+        }
+        Text(
+            text = "Rescan the library for changes to take effect.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}

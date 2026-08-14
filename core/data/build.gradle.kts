@@ -26,6 +26,8 @@ dependencies {
     implementation(projects.core.audio)
     implementation(projects.core.model)
     implementation(projects.core.database)
+    // The scanner honours the folders and minimum duration the user has set.
+    implementation(projects.core.datastore)
     implementation(libs.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
 

@@ -85,6 +85,10 @@ class SettingsViewModel @Inject constructor(
             initialValue = AppSettings(),
         )
 
+    fun unhideFolder(path: String) = edit { repository.unhideFolder(path) }
+
+    fun setMinimumTrackDurationMs(ms: Long) = edit { repository.setMinimumTrackDurationMs(ms) }
+
     fun setResumeAfterInterruption(enabled: Boolean) =
         edit { repository.setResumeAfterInterruption(enabled) }
 

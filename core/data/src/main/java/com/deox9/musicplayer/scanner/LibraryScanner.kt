@@ -48,13 +48,24 @@ class LibraryScanner @Inject constructor(
      * Tracks that MediaStore no longer lists are removed, so deletions made outside
      * the app do not leave dead rows behind.
      */
-    suspend fun scan(minimumDurationMs: Long = 0L, thorough: Boolean = false): State = mutex.withLock {
+    suspend fun scan(
+        minimumDurationMs: Long = 0L,
+        thorough: Boolean = false,
+        hiddenFolders: Set<String> = emptySet(),
+    ): State = mutex.withLock {
         _state.value = State.Scanning
         val startedAt = System.currentTimeMillis()
 
         val result = runCatching {
             withContext(Dispatchers.IO) {
-                val scanned = mediaStoreSource.readTracks(minimumDurationMs)
+                // MediaStore applies the duration filter in its own query, which is
+                // cheaper than reading rows only to drop them. Hidden folders it
+                // cannot know about, so those are filtered here.
+                val scanned = LibraryFilters.apply(
+                    tracks = mediaStoreSource.readTracks(minimumDurationMs),
+                    hiddenFolders = hiddenFolders,
+                    minimumDurationMs = 0L,
+                )
 
                 // The thorough pass opens every file, so it is opt-in and runs after
                 // the fast pass has already produced a usable library.

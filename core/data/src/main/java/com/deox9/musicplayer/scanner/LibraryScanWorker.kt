@@ -8,8 +8,10 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.deox9.musicplayer.settings.AppSettingsRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.flow.first
 
 /**
  * Runs the library scan off the UI, surviving the app being backgrounded.
@@ -23,13 +25,24 @@ class LibraryScanWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val scanner: LibraryScanner,
     private val replayGainScanner: ReplayGainScanner,
+    private val settingsRepository: AppSettingsRepository,
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
         val minimumDurationMs = inputData.getLong(KEY_MINIMUM_DURATION_MS, 0L)
         val thorough = inputData.getBoolean(KEY_THOROUGH, false)
+        // Read here rather than passed in the work request: a scan can be scheduled
+        // long before it runs, and the folders someone has hidden since should be
+        // honoured by the scan that actually happens.
+        val settings = settingsRepository.observe().first()
 
-        return when (scanner.scan(minimumDurationMs, thorough)) {
+        return when (
+            scanner.scan(
+                minimumDurationMs = maxOf(minimumDurationMs, settings.minimumTrackDurationMs),
+                thorough = thorough,
+                hiddenFolders = settings.hiddenFolders,
+            )
+        ) {
             is LibraryScanner.State.Complete -> {
                 // A small batch inline, then the rest handed to its own worker.
                 //

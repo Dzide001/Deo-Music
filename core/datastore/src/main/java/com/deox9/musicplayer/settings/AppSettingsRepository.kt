@@ -8,7 +8,9 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.deox9.musicplayer.audio.CrossfadeCurve
 import com.deox9.musicplayer.audio.CrossfadeSettings
@@ -110,6 +112,15 @@ data class AppSettings(
      * it running slow.
      */
     val playbackPitch: Float = 1f,
+    /**
+     * Folders excluded from the library, with everything under them.
+     *
+     * A phone's audio is not all music — voice notes, ringtones and game sounds land
+     * in the same MediaStore — and this is how someone says which of it is not.
+     */
+    val hiddenFolders: Set<String> = emptySet(),
+    /** Tracks shorter than this are not indexed. Zero means index everything. */
+    val minimumTrackDurationMs: Long = 0L,
 )
 
 class AppSettingsRepository(private val context: Context) {
@@ -119,31 +130,53 @@ class AppSettingsRepository(private val context: Context) {
             AppSettings(
                 webHomeUrl = prefs[Keys.WEB_HOME_URL] ?: DEFAULT_WEB_HOME_URL,
                 crossfade = readCrossfade(prefs),
-                darkThemeEnabled = prefs[Keys.DARK_THEME_ENABLED] ?: true,
-                themeMode = prefs[Keys.THEME_MODE] ?: THEME_MODE_UNSET,
-                dynamicColorEnabled = prefs[Keys.DYNAMIC_COLOR_ENABLED] ?: true,
-                amoledEnabled = prefs[Keys.AMOLED_ENABLED] ?: false,
-                suggestionsEnabled = prefs[Keys.SUGGESTIONS_ENABLED] ?: true,
-                eqEnabled = prefs[Keys.EQ_ENABLED] ?: false,
-                replayGainEnabled = prefs[Keys.REPLAY_GAIN_ENABLED] ?: false,
-                replayGainDb = prefs[Keys.REPLAY_GAIN_DB] ?: 0f,
-                eqBandLevels = decodeEqBands(prefs[Keys.EQ_BAND_LEVELS_JSON] ?: "[]"),
-                eqBands = decodeParametricBands(
-                    raw = prefs[Keys.EQ_BANDS_JSON],
-                    legacyLevels = decodeEqBands(prefs[Keys.EQ_BAND_LEVELS_JSON] ?: "[]"),
-                ),
                 thoroughScanEnabled = prefs[Keys.THOROUGH_SCAN_ENABLED] ?: false,
                 onlineLyricsEnabled = prefs[Keys.ONLINE_LYRICS_ENABLED] ?: false,
-                resumeAfterInterruption = prefs[Keys.RESUME_AFTER_INTERRUPTION] ?: true,
-                playbackSpeed = prefs[Keys.PLAYBACK_SPEED] ?: 1f,
-                playbackPitch = prefs[Keys.PLAYBACK_PITCH] ?: 1f,
-                outputProfiles = OutputProfiles(
-                    profiles = decodeOutputProfiles(prefs[Keys.OUTPUT_PROFILES_JSON]),
-                    enabled = prefs[Keys.OUTPUT_PROFILES_ENABLED] ?: false,
-                )
+                suggestionsEnabled = prefs[Keys.SUGGESTIONS_ENABLED] ?: true,
             )
+                .withAppearance(prefs)
+                .withAudio(prefs)
+                .withLibraryFilters(prefs)
         }
     }
+
+    /**
+     * Read in groups rather than as one expression.
+     *
+     * Every default is an elvis and every elvis is a branch, so a single builder
+     * grew past the complexity limit purely by the settings screen gaining rows —
+     * which says nothing about how hard the code is to follow. Splitting it by
+     * subject keeps each piece short and puts related settings together.
+     */
+    private fun AppSettings.withAppearance(prefs: Preferences) = copy(
+        darkThemeEnabled = prefs[Keys.DARK_THEME_ENABLED] ?: true,
+        themeMode = prefs[Keys.THEME_MODE] ?: THEME_MODE_UNSET,
+        dynamicColorEnabled = prefs[Keys.DYNAMIC_COLOR_ENABLED] ?: true,
+        amoledEnabled = prefs[Keys.AMOLED_ENABLED] ?: false,
+    )
+
+    private fun AppSettings.withAudio(prefs: Preferences): AppSettings {
+        val legacyLevels = decodeEqBands(prefs[Keys.EQ_BAND_LEVELS_JSON] ?: "[]")
+        return copy(
+            eqEnabled = prefs[Keys.EQ_ENABLED] ?: false,
+            replayGainEnabled = prefs[Keys.REPLAY_GAIN_ENABLED] ?: false,
+            replayGainDb = prefs[Keys.REPLAY_GAIN_DB] ?: 0f,
+            eqBandLevels = legacyLevels,
+            eqBands = decodeParametricBands(prefs[Keys.EQ_BANDS_JSON], legacyLevels),
+            resumeAfterInterruption = prefs[Keys.RESUME_AFTER_INTERRUPTION] ?: true,
+            playbackSpeed = prefs[Keys.PLAYBACK_SPEED] ?: 1f,
+            playbackPitch = prefs[Keys.PLAYBACK_PITCH] ?: 1f,
+            outputProfiles = OutputProfiles(
+                profiles = decodeOutputProfiles(prefs[Keys.OUTPUT_PROFILES_JSON]),
+                enabled = prefs[Keys.OUTPUT_PROFILES_ENABLED] ?: false,
+            ),
+        )
+    }
+
+    private fun AppSettings.withLibraryFilters(prefs: Preferences) = copy(
+        hiddenFolders = prefs[Keys.HIDDEN_FOLDERS] ?: emptySet(),
+        minimumTrackDurationMs = prefs[Keys.MIN_TRACK_DURATION_MS] ?: 0L,
+    )
 
     /**
      * Every stored preference as text, for a backup.
@@ -323,8 +356,30 @@ class AppSettingsRepository(private val context: Context) {
             prefs[Keys.RESUME_AFTER_INTERRUPTION] = true
             prefs[Keys.PLAYBACK_SPEED] = 1f
             prefs[Keys.PLAYBACK_PITCH] = 1f
+            prefs[Keys.HIDDEN_FOLDERS] = emptySet()
+            prefs[Keys.MIN_TRACK_DURATION_MS] = 0L
             prefs[Keys.OUTPUT_PROFILES_ENABLED] = false
             prefs[Keys.OUTPUT_PROFILES_JSON] = encodeOutputProfiles(emptyMap())
+        }
+    }
+
+    suspend fun hideFolder(path: String) {
+        val cleaned = path.trim().trimEnd('/')
+        if (cleaned.isEmpty()) return
+        context.appSettingsDataStore.edit { prefs ->
+            prefs[Keys.HIDDEN_FOLDERS] = (prefs[Keys.HIDDEN_FOLDERS] ?: emptySet()) + cleaned
+        }
+    }
+
+    suspend fun unhideFolder(path: String) {
+        context.appSettingsDataStore.edit { prefs ->
+            prefs[Keys.HIDDEN_FOLDERS] = (prefs[Keys.HIDDEN_FOLDERS] ?: emptySet()) - path
+        }
+    }
+
+    suspend fun setMinimumTrackDurationMs(ms: Long) {
+        context.appSettingsDataStore.edit { prefs ->
+            prefs[Keys.MIN_TRACK_DURATION_MS] = ms.coerceAtLeast(0L)
         }
     }
 
@@ -524,6 +579,8 @@ class AppSettingsRepository(private val context: Context) {
         val RESUME_AFTER_INTERRUPTION = booleanPreferencesKey("resume_after_interruption")
         val PLAYBACK_SPEED = floatPreferencesKey("playback_speed")
         val PLAYBACK_PITCH = floatPreferencesKey("playback_pitch")
+        val HIDDEN_FOLDERS = stringSetPreferencesKey("hidden_folders")
+        val MIN_TRACK_DURATION_MS = longPreferencesKey("min_track_duration_ms")
         val OUTPUT_PROFILES_ENABLED = booleanPreferencesKey("output_profiles_enabled")
         val OUTPUT_PROFILES_JSON = stringPreferencesKey("output_profiles_json")
     }
