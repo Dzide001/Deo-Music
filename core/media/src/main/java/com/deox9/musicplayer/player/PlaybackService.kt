@@ -532,11 +532,18 @@ class PlaybackService : MediaSessionService() {
         val shuffleEnabled = player.shuffleModeEnabled
         val repeatMode = player.repeatMode
         val playerVolume = player.volume
+
+        // Read here, on the player's own thread. Everything below runs on IO, and
+        // ExoPlayer throws if it is touched from anywhere but the main thread —
+        // which it did, on every position tick, crashing the app during playback.
+        val queueSnapshot = queue.map { SavedQueueTrack(it.uri, it.title, it.artist) }
+        val queueIndex = player.currentMediaItemIndex
+
         ioScope.launch {
             // Resolved here rather than on the caller's thread: the fallback reads
             // the audio file, and this runs on every position tick.
             val albumArtUri = artworkUriFor(uri, libraryDao.filePathFor(uri))
-            rememberActiveQueue(player)
+            rememberActiveQueue(queueSnapshot, queueIndex, positionMs)
             playbackSessionRepository.save(
                 PlaybackSessionEntity(
                     uri = uri,
@@ -931,25 +938,29 @@ class PlaybackService : MediaSessionService() {
      * created. Only the active queue is touched; the others are not playing and
      * their positions are already correct.
      */
-    private suspend fun rememberActiveQueue(player: Player) {
-        val active = savedQueues.current().activeId ?: return
-        val tracks = (0 until player.mediaItemCount).map { index ->
-            val item = player.getMediaItemAt(index)
-            SavedQueueTrack(
-                uri = item.mediaId,
-                title = item.mediaMetadata.title?.toString().orEmpty(),
-                artist = item.mediaMetadata.artist?.toString().orEmpty(),
-            )
-        }
+    /**
+     * Writes an already-taken snapshot into the active saved queue.
+     *
+     * Takes the tracks and index as values rather than a Player. It used to take the
+     * player and read it here, which crashed: this runs on an IO dispatcher and
+     * ExoPlayer throws when touched off the main thread. The snapshot is taken by
+     * the caller, which is already on the right thread.
+     */
+    private suspend fun rememberActiveQueue(
+        tracks: List<SavedQueueTrack>,
+        currentIndex: Int,
+        positionMs: Long,
+    ) {
         if (tracks.isEmpty()) return
+        val active = savedQueues.current().activeId ?: return
 
         savedQueues.update { queues ->
             val existing = queues.queues.firstOrNull { it.id == active } ?: return@update queues
             queues.save(
                 existing.copy(
                     tracks = tracks,
-                    currentIndex = player.currentMediaItemIndex,
-                    positionMs = player.currentPosition.coerceAtLeast(0L),
+                    currentIndex = currentIndex,
+                    positionMs = positionMs.coerceAtLeast(0L),
                     updatedAtMs = System.currentTimeMillis(),
                 ),
             )
