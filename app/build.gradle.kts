@@ -5,6 +5,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 // AGP 9 provides Kotlin support built in; the org.jetbrains.kotlin.android
 // plugin must not be applied. See https://kotl.in/gradle/agp-built-in-kotlin
 plugins {
+    alias(libs.plugins.baselineprofile)
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
@@ -137,6 +138,10 @@ kotlin {
 }
 
 dependencies {
+    // The generated profile, and the library that installs it at first run.
+    baselineProfile(projects.baselineprofile)
+    implementation(libs.androidx.profileinstaller)
+
     implementation(projects.core.model)
     implementation(projects.core.data)
     implementation(projects.core.designsystem)

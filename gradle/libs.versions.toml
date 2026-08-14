@@ -1,4 +1,9 @@
 [versions]
+# 1.5.0-rc01 rather than the 1.4.1 stable: 1.4.1's plugin looks for AGP's
+# TestExtension, which AGP 9 no longer registers under that type, and fails to
+# apply at all. This is the newest published line and the first that knows about
+# AGP 9.
+baselineProfile = "1.5.0-rc01"
 orgJson = "20250107"
 # Build toolchain — verified against Google Maven / Maven Central on 2026-08-08.
 # AGP 9.x is required: current AndroidX (core-ktx 1.19, lifecycle 2.11) refuses
@@ -47,6 +52,7 @@ robolectric = "4.16.1"
 leakcanary = "2.14"
 
 [libraries]
+androidx-benchmark-macro = { module = "androidx.benchmark:benchmark-macro-junit4", version.ref = "baselineProfile" }
 # Real org.json for unit tests; android.jar ships stubs that throw "not mocked".
 org-json = { module = "org.json:json", version.ref = "orgJson" }
 # --- Media (Apache 2.0) ---
@@ -135,6 +141,8 @@ ksp-gradlePlugin = { module = "com.google.devtools.ksp:com.google.devtools.ksp.g
 hilt-gradlePlugin = { module = "com.google.dagger:hilt-android-gradle-plugin", version.ref = "hilt" }
 
 [plugins]
+android-test = { id = "com.android.test", version.ref = "agp" }
+baselineprofile = { id = "androidx.baselineprofile", version.ref = "baselineProfile" }
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
