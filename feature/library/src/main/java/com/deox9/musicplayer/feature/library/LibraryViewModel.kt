@@ -16,13 +16,16 @@ import com.deox9.musicplayer.library.RecommendationSignalsRepository
 import com.deox9.musicplayer.library.RoomLibraryRepository
 import com.deox9.musicplayer.library.TrackLoudness
 import com.deox9.musicplayer.player.PlaybackConnection
+import com.deox9.musicplayer.playlist.PlaylistTransfer
 import com.deox9.musicplayer.scanner.LibraryScanner
 import com.deox9.musicplayer.settings.AppSettings
 import com.deox9.musicplayer.settings.AppSettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -45,7 +48,39 @@ class LibraryViewModel @Inject constructor(
     private val favouritesRepository: FavouritesRepository,
     private val recommendationSignalsRepository: RecommendationSignalsRepository,
     private val settingsRepository: AppSettingsRepository,
+    private val playlistTransfer: PlaylistTransfer,
 ) : ViewModel() {
+
+    /** What the last playlist import or export did, for the screen to report. */
+    private val _transferStatus = MutableStateFlow<String?>(null)
+    val transferStatus: StateFlow<String?> = _transferStatus.asStateFlow()
+
+    fun clearTransferStatus() {
+        _transferStatus.value = null
+    }
+
+    /**
+     * Exports a playlist, handing the text to whatever the picker chose.
+     *
+     * The writer is passed in rather than a path returned, because the destination
+     * is a document the caller holds a resolver for and this layer never sees a file.
+     */
+    fun exportPlaylist(playlistId: Long, name: String, write: (String) -> Unit) {
+        viewModelScope.launch {
+            _transferStatus.value = runCatching {
+                write(playlistTransfer.export(playlistId))
+                "Exported $name."
+            }.getOrElse { "Could not export: ${it.message}" }
+        }
+    }
+
+    fun importPlaylist(name: String, text: String) {
+        viewModelScope.launch {
+            _transferStatus.value = runCatching {
+                playlistTransfer.import(name, text).summary()
+            }.getOrElse { "Could not import: ${it.message}" }
+        }
+    }
 
     val favourites: StateFlow<Set<String>> = favouritesRepository.observe()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptySet())

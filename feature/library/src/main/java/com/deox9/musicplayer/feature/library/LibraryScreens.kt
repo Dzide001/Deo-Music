@@ -93,11 +93,41 @@ fun PlaylistsScreen(
 ) {
     val context = LocalContext.current
     var selected by remember { mutableStateOf<PlaylistInfo?>(null) }
+    var exportTarget by remember { mutableStateOf<PlaylistInfo?>(null) }
+    val createPlaylistFile = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("audio/x-mpegurl"),
+    ) { uri ->
+        val playlist = exportTarget
+        exportTarget = null
+        if (uri == null || playlist == null) return@rememberLauncherForActivityResult
+        viewModel.exportPlaylist(playlist.id, playlist.name) { text ->
+            context.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }
+        }
+    }
     // A one-shot read from the index rather than a live StateFlow, matching the
     // existing screen structure; the scanner imports MediaStore playlists into the
     // schema as part of every scan.
     val playlists by produceState<List<PlaylistInfo>>(initialValue = emptyList()) {
         value = viewModel.playlists()
+    }
+
+    val status by viewModel.transferStatus.collectAsState()
+
+    val openPlaylist = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val text = runCatching {
+            context.contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() }
+        }.getOrNull()
+        // Named after the file, because a playlist called "Imported" tells you
+        // nothing once you have imported two.
+        val name = uri.lastPathSegment
+            ?.substringAfterLast('/')
+            ?.substringBeforeLast('.')
+            ?.takeIf { it.isNotBlank() }
+            ?: "Imported playlist"
+        if (text != null) viewModel.importPlaylist(name, text)
     }
 
     ListDetailPane(
@@ -107,13 +137,42 @@ fun PlaylistsScreen(
             }
         },
     ) {
-        PlaylistsList(
-            playlists = playlists,
-            searchQuery = searchQuery,
-            sortOption = sortOption,
-            listState = listState,
-            onSelect = { selected = it }
-        )
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(
+                    onClick = { openPlaylist.launch(arrayOf("audio/x-mpegurl", "audio/mpegurl", "*/*")) },
+                ) {
+                    Text("Import playlist")
+                }
+            }
+            status?.let { message ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = viewModel::clearTransferStatus) { Text("Dismiss") }
+                }
+            }
+            PlaylistsList(
+                playlists = playlists,
+                searchQuery = searchQuery,
+                sortOption = sortOption,
+                listState = listState,
+                onSelect = { selected = it },
+                onExport = { playlist ->
+                    exportTarget = playlist
+                    createPlaylistFile.launch("${playlist.name}.m3u8")
+                },
+            )
+        }
     }
 }
 
@@ -123,7 +182,8 @@ private fun PlaylistsList(
     searchQuery: String,
     sortOption: CollectionSortOption,
     listState: LazyListState,
-    onSelect: (PlaylistInfo) -> Unit
+    onSelect: (PlaylistInfo) -> Unit,
+    onExport: (PlaylistInfo) -> Unit,
 ) {
     val filtered = remember(playlists, searchQuery, sortOption) {
         val searched = if (searchQuery.isBlank()) {
@@ -155,6 +215,16 @@ private fun PlaylistsList(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable(onClickLabel = "Open") { onSelect(playlist) }
+                    // A named action rather than a hidden gesture: a screen reader
+                    // cannot long-press, and this is the only route to exporting.
+                    .semantics {
+                        customActions = listOf(
+                            CustomAccessibilityAction("Export playlist") {
+                                onExport(playlist)
+                                true
+                            },
+                        )
+                    }
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
