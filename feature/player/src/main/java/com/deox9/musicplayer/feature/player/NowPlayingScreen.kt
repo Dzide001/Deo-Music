@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -36,6 +37,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
@@ -57,6 +59,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.deox9.musicplayer.player.PlaybackError
 import com.deox9.musicplayer.player.PlaybackState
 import com.deox9.musicplayer.ui.formatDuration
 import com.deox9.musicplayer.ui.rememberWindowLayout
@@ -125,6 +128,12 @@ fun ExpandedNowPlayingScreen(
                 onRequestDialog = { dialog = it },
             )
 
+            // Only while the track that failed is still the one loaded. Where the
+            // auto-advance worked the queue has already moved on and the passing
+            // notice belongs in a snackbar; this is for the case it could not fix,
+            // which is the case where the screen would otherwise sit at 0:00.
+            PlaybackErrorBanner(error = session?.error?.takeIf { it.trackUri == currentUri })
+
             val artwork: @Composable (Modifier) -> Unit = { modifier ->
                 NowPlayingArtwork(session = session, modifier = modifier)
             }
@@ -173,6 +182,51 @@ fun ExpandedNowPlayingScreen(
         session = session,
         onMinimize = onMinimize,
     )
+}
+
+/**
+ * Says, on the screen the user is looking at, that this track will not play.
+ *
+ * The reason goes under the headline rather than replacing it: "The file is damaged"
+ * on its own leaves them to work out which file, and the title is right there above
+ * the transport controls they were about to press.
+ */
+@Composable
+private fun PlaybackErrorBanner(error: PlaybackError?) {
+    if (error == null) return
+
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.ErrorOutline,
+                // The text beside it says the same thing, and a screen reader
+                // announcing "error" twice is noise.
+                contentDescription = null,
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column {
+                Text(
+                    text = "Can't play this track",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = error.message,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
 }
 
 /**

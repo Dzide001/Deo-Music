@@ -30,9 +30,33 @@ data class PlaybackState(
      * record's write timestamp.
      */
     val updatedAtMs: Long = 0L,
+    /** The last track that would not play, or null if nothing has failed. */
+    val error: PlaybackError? = null,
 ) {
     val hasTrack: Boolean get() = uri.isNotBlank()
 }
+
+/**
+ * A track that would not play.
+ *
+ * Carried on [PlaybackState] because a failure is part of what the player is doing.
+ * The media session already knew — `state=ERROR(7) ... error=Source error` — and the
+ * UI had no way to find out, so a track that failed to decode looked exactly like one
+ * sitting at 0:00 waiting to start.
+ */
+data class PlaybackError(
+    val trackUri: String,
+    val trackTitle: String,
+    /** Why it failed, in words meant for the person listening rather than an error code. */
+    val message: String,
+    /**
+     * Counts up once per failure.
+     *
+     * Two failures of the same track are two events, so a one-shot notice keyed on the
+     * message alone would announce the first and swallow the second.
+     */
+    val id: Long,
+)
 
 data class QueueEntry(
     val uri: String,

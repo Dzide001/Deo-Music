@@ -4,6 +4,7 @@ package com.deox9.musicplayer.player
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
+import android.os.Bundle
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -55,11 +56,13 @@ class PlaybackConnection @Inject constructor(
     private var controllerFuture: com.google.common.util.concurrent.ListenableFuture<MediaController>? = null
     private var positionTicker: Job? = null
 
-    init {
-        // App-scoped: the controller outlives any single screen, so binding is
-        // tied to the graph rather than to a composition that comes and goes.
-        connect()
-    }
+    /**
+     * The last failure the service reported, held between emissions.
+     *
+     * [publish] rebuilds the whole state four times a second off the controller, and
+     * the controller has nothing to say about a failure it has already recovered from.
+     */
+    private var lastError: PlaybackError? = null
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
@@ -68,11 +71,39 @@ class PlaybackConnection @Inject constructor(
         }
     }
 
+    /**
+     * Receives playback failures, which the service publishes as session extras.
+     *
+     * See [PlaybackErrorExtras] for why they arrive this way rather than through
+     * [Player.Listener.onPlayerError] on the controller.
+     */
+    private val sessionListener = object : MediaController.Listener {
+        override fun onExtrasChanged(controller: MediaController, extras: Bundle) {
+            lastError = PlaybackErrorExtras.fromBundle(extras)
+            publish()
+        }
+    }
+
+    /**
+     * Declared after both listeners, and it has to stay there.
+     *
+     * Properties initialise in declaration order, so [connect] running from an init
+     * block above them sees them as null — and `MediaController.Builder.setListener`
+     * rejects a null outright, taking the app down on its first composition.
+     */
+    init {
+        // App-scoped: the controller outlives any single screen, so binding is
+        // tied to the graph rather than to a composition that comes and goes.
+        connect()
+    }
+
     fun connect() {
         if (controllerFuture != null) return
 
         val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
-        val future = MediaController.Builder(context, token).buildAsync()
+        val future = MediaController.Builder(context, token)
+            .setListener(sessionListener)
+            .buildAsync()
         controllerFuture = future
 
         future.addListener(
@@ -80,6 +111,9 @@ class PlaybackConnection @Inject constructor(
                 val bound = runCatching { future.get() }.getOrNull() ?: return@addListener
                 controller = bound
                 bound.addListener(listener)
+                // A failure reported while nothing was bound is still worth showing:
+                // the service holds it in the extras until the track it names plays.
+                lastError = PlaybackErrorExtras.fromBundle(bound.sessionExtras)
                 publish()
                 if (bound.isPlaying) startPositionTicker()
             },
@@ -127,12 +161,18 @@ class PlaybackConnection @Inject constructor(
     }
 
     fun togglePlayPause() = withController {
-        if (isPlaying) pause() else play()
+        if (isPlaying) {
+            pause()
+        } else {
+            prepareIfIdle()
+            play()
+        }
     }
 
     fun skipNext() = withController {
         if (hasNextMediaItem()) {
             seekToNextMediaItem()
+            prepareIfIdle()
             play()
         }
     }
@@ -140,6 +180,7 @@ class PlaybackConnection @Inject constructor(
     fun skipPrevious() = withController {
         if (hasPreviousMediaItem()) {
             seekToPreviousMediaItem()
+            prepareIfIdle()
             play()
         } else {
             seekTo(0)
@@ -153,6 +194,7 @@ class PlaybackConnection @Inject constructor(
     fun playQueueIndex(index: Int) = withController {
         if (index in 0 until mediaItemCount) {
             seekToDefaultPosition(index)
+            prepareIfIdle()
             play()
         }
     }
@@ -201,6 +243,18 @@ class PlaybackConnection @Inject constructor(
 
     private inline fun withController(block: MediaController.() -> Unit) {
         controller?.let { if (it.isConnected) it.block() }
+    }
+
+    /**
+     * Re-prepares a player that a failure left idle.
+     *
+     * A [androidx.media3.common.PlaybackException] drops the player to STATE_IDLE,
+     * where a seek lands but `play()` does nothing. That is why pressing Next on a
+     * track that would not decode used to leave the queue exactly where it was:
+     * the command arrived, the player moved, and nothing came out.
+     */
+    private fun MediaController.prepareIfIdle() {
+        if (playbackState == Player.STATE_IDLE) prepare()
     }
 
     private fun buildMediaItem(uri: String, title: String?, artist: String?): MediaItem =
@@ -268,6 +322,7 @@ class PlaybackConnection @Inject constructor(
             repeatMode = player.repeatMode,
             playerVolume = player.volume,
             updatedAtMs = System.currentTimeMillis(),
+            error = lastError,
         )
     }
 

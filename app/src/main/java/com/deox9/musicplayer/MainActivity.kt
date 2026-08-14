@@ -60,6 +60,9 @@ import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
@@ -73,6 +76,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -115,6 +119,8 @@ import com.deox9.musicplayer.ui.rememberWindowLayout
 import com.deox9.musicplayer.web.WebPlayback
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
@@ -269,6 +275,7 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
     // Null means "nothing loaded", which is what the rest of the UI already
     // branches on. Everything else reads straight off the bound controller.
     val session = playbackState.takeIf { it.hasTrack }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     RequestNotificationPermission()
 
@@ -387,6 +394,32 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
         }
     }
 
+    // A track can fail while the user is anywhere in the app — browsing the library,
+    // on another destination, or with the screen off and the notification driving
+    // playback. The Now Playing screen carries the same failure inline, but only the
+    // snackbar reaches them wherever they actually are, so it names the track.
+    //
+    // Keyed on Unit rather than on the error, so that the service withdrawing it —
+    // which happens the moment the auto-advance lands on a track that plays, often
+    // well inside the snackbar's own duration — cancels this coroutine and cuts the
+    // message off mid-display. Each failure is collected once and then shown for as
+    // long as it takes to read, whatever the player does next.
+    LaunchedEffect(Unit) {
+        // Reads the delegated state inside the lambda, which is what makes this a
+        // tracked snapshot read; a captured local would be frozen at first composition.
+        snapshotFlow { playbackState.error }
+            .filterNotNull()
+            .distinctUntilChangedBy { it.id }
+            .collect { error ->
+                val track = error.trackTitle.ifBlank { "this track" }
+                snackbarHostState.showSnackbar(
+                    message = "Can't play $track — ${error.message}",
+                    withDismissAction = true,
+                    duration = SnackbarDuration.Long,
+                )
+            }
+    }
+
     if (showNowPlaying) {
         BackHandler {
             showNowPlaying = false
@@ -420,6 +453,7 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
         }
 
         Scaffold(
+            snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
                 if (!showNowPlaying) {
                     // The app draws edge to edge (enforced from targetSdk 35), so the

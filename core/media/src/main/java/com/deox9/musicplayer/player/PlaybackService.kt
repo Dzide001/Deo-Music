@@ -4,6 +4,7 @@ package com.deox9.musicplayer.player
 import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
+import android.os.Bundle
 import android.provider.MediaStore
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
@@ -12,6 +13,7 @@ import androidx.media3.common.Format
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DecoderReuseEvaluation
@@ -108,6 +110,29 @@ class PlaybackService : MediaSessionService() {
     /** The track being played before the current one, used to attribute skips. */
     private var previousMediaId: String? = null
 
+    /**
+     * Items that have failed in a row, reset the moment anything plays.
+     *
+     * Bounds the auto-advance so a queue that fails end to end stops rather than
+     * sprinting through every item. See [errorRecoveryFor].
+     */
+    private var consecutiveFailures: Int = 0
+
+    /** Counts up per failure so the UI can tell a repeat from a redraw. */
+    private var errorSequence: Long = 0L
+
+    /** The track the last reported failure was about, if it has not been cleared. */
+    private var lastReportedErrorMediaId: String? = null
+
+    /**
+     * The item the player was moved off automatically after it failed.
+     *
+     * The resulting transition arrives with REASON_SEEK, indistinguishable from the
+     * user pressing Next, and recording it as a skip would teach the recommendations
+     * that they disliked a track they never heard.
+     */
+    private var autoAdvancedFromMediaId: String? = null
+
     override fun onCreate() {
         super.onCreate()
 
@@ -159,8 +184,12 @@ class PlaybackService : MediaSessionService() {
              * which is not a skip.
              */
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) {
-                    recordSkip(previousMediaId)
+                val leaving = previousMediaId
+                val steppedOverFailure = leaving != null && leaving == autoAdvancedFromMediaId
+                if (steppedOverFailure) autoAdvancedFromMediaId = null
+
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK && !steppedOverFailure) {
+                    recordSkip(leaving)
                 }
                 // The other half of the end-of-track fade. The outgoing track faded
                 // itself out; this brings the incoming one up from silence. A seek
@@ -177,7 +206,22 @@ class PlaybackService : MediaSessionService() {
                 previousMediaId = mediaItem?.mediaId
             }
 
+            /**
+             * Reports the failure and steps over the track that caused it.
+             *
+             * Handled on the service rather than only in the UI because the queue has to
+             * keep moving whether or not anything is bound to the session — the same
+             * unplayable file skips past from the notification and the widget too.
+             */
+            override fun onPlayerError(error: PlaybackException) {
+                handlePlayerError(error)
+            }
+
             override fun onEvents(player: Player, events: Player.Events) {
+                if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED)) {
+                    retractErrorOncePlaybackRecovers(player)
+                }
+
                 if (
                     events.contains(Player.EVENT_IS_PLAYING_CHANGED) ||
                     events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION) ||
@@ -651,6 +695,79 @@ class PlaybackService : MediaSessionService() {
         ioScope.launch {
             recommendationSignalsRepository.recordPlay(uri = uri, artist = artist)
         }
+    }
+
+    /**
+     * Publishes a failure to the UI and advances past the track that caused it.
+     *
+     * Both halves matter. Without the first, a track that will not decode reports
+     * `state=ERROR(7)` to the media session and nothing at all to the person holding
+     * the phone. Without the second, the queue stops dead on that one file.
+     */
+    private fun handlePlayerError(error: PlaybackException) {
+        val player = mediaSession?.player ?: return
+        val failedItem = player.currentMediaItem
+        val failedMediaId = failedItem?.mediaId.orEmpty()
+
+        consecutiveFailures += 1
+        errorSequence += 1
+        lastReportedErrorMediaId = failedMediaId
+        publishPlaybackError(
+            PlaybackError(
+                trackUri = failedMediaId,
+                trackTitle = failedItem?.mediaMetadata?.title?.toString().orEmpty(),
+                message = playbackErrorMessage(error.errorCode),
+                id = errorSequence,
+            ),
+        )
+
+        // Advancing is only ever a repair to playback that was wanted. A failure raised
+        // while paused — restoring a queue whose current track has since been deleted,
+        // say — has no queue to keep moving, and stepping it forward here would start
+        // playing something nobody asked for. Pressing Play re-prepares and, if it
+        // fails again, lands back here with playback genuinely in progress.
+        if (!player.playWhenReady) return
+
+        val recovery = errorRecoveryFor(
+            hasNextItem = player.hasNextMediaItem(),
+            consecutiveFailures = consecutiveFailures,
+            queueSize = player.mediaItemCount,
+        )
+        if (recovery != ErrorRecovery.AdvanceToNext) return
+
+        autoAdvancedFromMediaId = failedMediaId
+        player.seekToNextMediaItem()
+        // A PlaybackException leaves the player idle, where a seek lands but play()
+        // does nothing. Without this the queue moves to the next track and sits on it
+        // at 0:00, which looks identical to the stall it was meant to escape.
+        player.prepare()
+        player.play()
+    }
+
+    /**
+     * Withdraws a reported failure as soon as anything plays.
+     *
+     * Anything, not just the track that failed. Keying the retraction to that one track
+     * looked tidier and left the report standing forever in the common case, because a
+     * file the device cannot decode never does reach READY: the notice then outlived
+     * the session and greeted the user again on next launch, long after they had
+     * happily played something else.
+     *
+     * Retracting this eagerly is only safe because the UI does not depend on the state
+     * staying put to finish showing it — see the snackbar in `AppRoot`.
+     */
+    private fun retractErrorOncePlaybackRecovers(player: Player) {
+        if (player.playbackState != Player.STATE_READY) return
+
+        consecutiveFailures = 0
+        if (lastReportedErrorMediaId != null) {
+            lastReportedErrorMediaId = null
+            mediaSession?.setSessionExtras(Bundle())
+        }
+    }
+
+    private fun publishPlaybackError(error: PlaybackError) {
+        mediaSession?.setSessionExtras(PlaybackErrorExtras.toBundle(error))
     }
 
     /** Records that [mediaId] — the track being left — was skipped rather than finished. */
