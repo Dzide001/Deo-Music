@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.deox9.musicplayer.backup
 
+import kotlin.math.abs
+
 /**
  * How a backup refers to a track.
  *
@@ -63,31 +65,36 @@ data class RestoreCandidate(
  */
 fun resolveTrack(ref: BackupTrackRef, candidates: List<RestoreCandidate>): RestoreCandidate? {
     if (!ref.hasAnyIdentity) return null
+    return matchByPath(ref, candidates) ?: matchByTags(ref, candidates)
+}
 
-    if (ref.path.isNotBlank()) {
-        candidates.firstOrNull { it.path == ref.path }?.let { return it }
+/** The same file, either where it was or moved somewhere else unambiguously. */
+private fun matchByPath(ref: BackupTrackRef, candidates: List<RestoreCandidate>): RestoreCandidate? {
+    if (ref.path.isBlank()) return null
 
-        val name = ref.fileName
-        if (name.isNotBlank()) {
-            val byName = candidates.filter { it.path.substringAfterLast('/') == name }
-            // Only when it is unambiguous. Two files with the same name in different
-            // folders are a coin flip, and a wrong track in a playlist is worse than
-            // a missing one because nothing signals that it is wrong.
-            if (byName.size == 1) return byName.single()
-        }
-    }
+    candidates.firstOrNull { it.path == ref.path }?.let { return it }
 
+    val name = ref.fileName
+    if (name.isBlank()) return null
+    val byName = candidates.filter { it.path.substringAfterLast('/') == name }
+    // Only when it is unambiguous. Two files with the same name in different folders
+    // are a coin flip, and a wrong track in a playlist is worse than a missing one
+    // because nothing signals that it is wrong.
+    return byName.singleOrNull()
+}
+
+/** The same recording, renamed or re-encoded. */
+private fun matchByTags(ref: BackupTrackRef, candidates: List<RestoreCandidate>): RestoreCandidate? {
     if (ref.title.isBlank() || ref.artist.isBlank()) return null
 
     val byTags = candidates.filter {
         it.title.equals(ref.title, ignoreCase = true) &&
             it.artist.equals(ref.artist, ignoreCase = true)
     }
-    if (byTags.isEmpty()) return null
     if (byTags.size == 1 && ref.durationMs <= 0L) return byTags.single()
 
     return byTags.firstOrNull {
-        ref.durationMs > 0L && kotlin.math.abs(it.durationMs - ref.durationMs) <= DURATION_TOLERANCE_MS
+        ref.durationMs > 0L && abs(it.durationMs - ref.durationMs) <= DURATION_TOLERANCE_MS
     }
 }
 
