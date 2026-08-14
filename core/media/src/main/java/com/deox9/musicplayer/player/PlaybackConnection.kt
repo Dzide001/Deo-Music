@@ -140,6 +140,25 @@ class PlaybackConnection @Inject constructor(
      * [playFrom]: replacing the queue with one track is what made Next do nothing
      * after tapping a song, because there was never anything to go next to.
      */
+    /**
+     * Restores a saved queue, resuming at the position it was left at.
+     *
+     * Distinct from [playFrom], which always starts a track from the beginning: the
+     * whole point of switching back to a queue is landing where you were, not at the
+     * top of the track you were halfway through.
+     */
+    fun playQueue(uris: List<String>, startIndex: Int, positionMs: Long) = withController {
+        if (uris.isEmpty()) return@withController
+        val index = startIndex.coerceIn(0, uris.size - 1)
+        setMediaItems(
+            uris.map { buildMediaItem(it, null, null) },
+            index,
+            positionMs.coerceAtLeast(0L),
+        )
+        prepare()
+        play()
+    }
+
     fun playNow(uri: String, title: String?, artist: String?) = withController {
         setMediaItem(buildMediaItem(uri, title, artist))
         prepare()

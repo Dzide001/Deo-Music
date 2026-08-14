@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -33,8 +34,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -51,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.deox9.musicplayer.lyrics.SyncedLyricLine
 import com.deox9.musicplayer.player.QueueEntry
+import com.deox9.musicplayer.player.SavedQueue
 
 /** The synced line to highlight at a given playback position, if any. */
 internal fun currentSyncedLyricLine(lines: List<SyncedLyricLine>, positionMs: Long): String? {
@@ -105,6 +109,9 @@ fun QueueSidebar(
                     .padding(16.dp),
             ) {
                 QueueHeader(count = reorder.items.size, onDismiss = onDismiss)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                SavedQueueSwitcher(viewModel)
                 Spacer(modifier = Modifier.height(12.dp))
 
                 if (reorder.items.isEmpty()) {
@@ -415,3 +422,99 @@ private const val SCRIM_ALPHA = 0.35f
 private const val DRAG_TINT_ALPHA = 0.12f
 private val PANEL_WIDTH = 340.dp
 private val ROW_HEIGHT = 72.dp
+
+/**
+ * The saved queues, and how to move between them.
+ *
+ * Lives at the top of the queue panel because that is where someone already goes to
+ * see what is playing next — a queue switcher anywhere else is a feature nobody
+ * finds. Named "keep" rather than "save": the queue is not being written to a file,
+ * it is being set aside so the next thing you play does not destroy it.
+ */
+@Composable
+private fun SavedQueueSwitcher(viewModel: PlayerViewModel) {
+    val saved by viewModel.queues.collectAsState()
+    var renaming by remember { mutableStateOf<SavedQueue?>(null) }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("Queues", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+        TextButton(onClick = { viewModel.saveCurrentQueue() }) { Text("Keep this one") }
+    }
+
+    if (saved.queues.isEmpty()) {
+        Text(
+            text = "Keep a queue to come back to it later, with its place held.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        return
+    }
+
+    saved.queues.forEach { queue ->
+        val isActive = queue.id == saved.activeId
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClickLabel = "Switch to ${queue.name}") {
+                    if (!isActive) viewModel.switchToQueue(queue.id)
+                }
+                .padding(vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = queue.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isActive) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                )
+                Text(
+                    // Says where it will resume, which is the reason to switch back.
+                    text = buildString {
+                        append("${queue.tracks.size} track${if (queue.tracks.size == 1) "" else "s"}")
+                        queue.currentTrack?.title?.takeIf { it.isNotBlank() }?.let {
+                            append(" · at $it")
+                        }
+                        if (isActive) append(" · playing")
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            TextButton(onClick = { renaming = queue }) { Text("Rename") }
+            TextButton(onClick = { viewModel.deleteQueue(queue.id) }) { Text("Delete") }
+        }
+    }
+
+    renaming?.let { queue ->
+        var name by remember(queue.id) { mutableStateOf(queue.name) }
+        AlertDialog(
+            onDismissRequest = { renaming = null },
+            title = { Text("Rename queue") },
+            text = {
+                TextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    label = { Text("Name") },
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.renameQueue(queue.id, name)
+                        renaming = null
+                    },
+                ) { Text("Rename") }
+            },
+            dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
+        )
+    }
+}

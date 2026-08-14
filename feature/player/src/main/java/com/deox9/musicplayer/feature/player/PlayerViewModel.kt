@@ -18,8 +18,12 @@ import com.deox9.musicplayer.player.AbLoop
 import com.deox9.musicplayer.player.OutputRouteMonitor
 import com.deox9.musicplayer.player.PlaybackConnection
 import com.deox9.musicplayer.player.PlaybackState
+import com.deox9.musicplayer.player.SavedQueue
+import com.deox9.musicplayer.player.SavedQueueTrack
+import com.deox9.musicplayer.player.SavedQueues
 import com.deox9.musicplayer.player.SignalChainReporter
 import com.deox9.musicplayer.player.SleepTimer
+import com.deox9.musicplayer.player.storage.SavedQueuesRepository
 import com.deox9.musicplayer.settings.AppSettings
 import com.deox9.musicplayer.settings.AppSettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -48,6 +52,7 @@ class PlayerViewModel @Inject constructor(
     private val lyricsRepository: LyricsRepository,
     private val settingsRepository: AppSettingsRepository,
     private val playerTools: PlayerTools,
+    private val savedQueues: SavedQueuesRepository,
 ) : ViewModel() {
 
     val state: StateFlow<PlaybackState> = playback.state
@@ -135,6 +140,56 @@ class PlayerViewModel @Inject constructor(
      * justify a second thing in the transport row, and the icon already says
      * whether shuffle is doing anything.
      */
+    val queues: StateFlow<SavedQueues> = savedQueues.observe()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), SavedQueues())
+
+    /**
+     * Saves what is playing now as a new queue, and switches to it.
+     *
+     * Switching immediately is the point: the new queue becomes the one that
+     * receives position updates, so the one left behind stops moving and keeps the
+     * place it had.
+     */
+    fun saveCurrentQueue(name: String? = null) = edit {
+        val state = playback.state.value
+        if (state.queue.isEmpty()) return@edit
+        val tracks = state.queue.map { SavedQueueTrack(it.uri, it.title, it.artist) }
+        savedQueues.update { existing ->
+            val id = "queue-${System.currentTimeMillis()}"
+            existing.save(
+                SavedQueue(
+                    id = id,
+                    name = name?.trim()?.takeIf { it.isNotEmpty() } ?: existing.suggestName(),
+                    tracks = tracks,
+                    currentIndex = state.queue.indexOfFirst { it.uri == state.uri }.coerceAtLeast(0),
+                    positionMs = playback.currentPositionMs(),
+                    updatedAtMs = System.currentTimeMillis(),
+                ),
+            ).activate(id)
+        }
+    }
+
+    /**
+     * Switches to a saved queue, resuming where it was left.
+     *
+     * The queue being left is written first. Without that it would keep the position
+     * it had when it was last persisted, which is up to a second stale — and after a
+     * switch that second is the difference between resuming and repeating a phrase.
+     */
+    fun switchToQueue(id: String) = edit {
+        val target = savedQueues.current().queues.firstOrNull { it.id == id } ?: return@edit
+        savedQueues.update { it.activate(id) }
+        playback.playQueue(
+            uris = target.tracks.map { it.uri },
+            startIndex = target.safeIndex,
+            positionMs = target.positionMs,
+        )
+    }
+
+    fun renameQueue(id: String, name: String) = edit { savedQueues.update { it.rename(id, name) } }
+
+    fun deleteQueue(id: String) = edit { savedQueues.update { it.remove(id) } }
+
     fun cycleShuffleMode() = edit {
         val next = when (settings.value.shuffleMode) {
             ShuffleMode.Off -> ShuffleMode.Tracks

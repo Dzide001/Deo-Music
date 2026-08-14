@@ -17,7 +17,14 @@ import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
 
-private val Context.playbackDataStore: DataStore<Preferences> by preferencesDataStore(name = "playback_session")
+/**
+ * The playback store, shared with [SavedQueuesRepository].
+ *
+ * Internal rather than private because the saved queues live in the same file: they
+ * are the same kind of state, written at the same moments, and a second DataStore
+ * would mean two files that have to agree about what is playing.
+ */
+internal val Context.playbackDataStore: DataStore<Preferences> by preferencesDataStore(name = "playback_session")
 
 class PlaybackSessionRepository(
     private val context: Context

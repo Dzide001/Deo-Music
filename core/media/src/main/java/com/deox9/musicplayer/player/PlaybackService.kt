@@ -45,6 +45,7 @@ import com.deox9.musicplayer.library.RecommendationSignalsRepository
 import com.deox9.musicplayer.player.storage.PlaybackSessionEntity
 import com.deox9.musicplayer.player.storage.PlaybackSessionRepository
 import com.deox9.musicplayer.player.storage.QueueItem
+import com.deox9.musicplayer.player.storage.SavedQueuesRepository
 import com.deox9.musicplayer.settings.AppSettingsRepository
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
@@ -98,6 +99,9 @@ class PlaybackService : MediaSessionService() {
 
     @Inject
     lateinit var abLoop: AbLoop
+
+    @Inject
+    lateinit var savedQueues: SavedQueuesRepository
     private var mediaSession: MediaSession? = null
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -532,6 +536,7 @@ class PlaybackService : MediaSessionService() {
             // Resolved here rather than on the caller's thread: the fallback reads
             // the audio file, and this runs on every position tick.
             val albumArtUri = artworkUriFor(uri, libraryDao.filePathFor(uri))
+            rememberActiveQueue(player)
             playbackSessionRepository.save(
                 PlaybackSessionEntity(
                     uri = uri,
@@ -916,6 +921,39 @@ class PlaybackService : MediaSessionService() {
             get() = item.mediaMetadata.albumTitle?.toString().orEmpty()
         override val groupFolder: String
             get() = item.localConfiguration?.uri?.toString()?.substringBeforeLast('/').orEmpty()
+    }
+
+    /**
+     * Writes the live queue into the active saved queue.
+     *
+     * Called on the same beat as the session record, so a queue that is switched
+     * away from resumes where it actually was rather than where it was when it was
+     * created. Only the active queue is touched; the others are not playing and
+     * their positions are already correct.
+     */
+    private suspend fun rememberActiveQueue(player: Player) {
+        val active = savedQueues.current().activeId ?: return
+        val tracks = (0 until player.mediaItemCount).map { index ->
+            val item = player.getMediaItemAt(index)
+            SavedQueueTrack(
+                uri = item.mediaId,
+                title = item.mediaMetadata.title?.toString().orEmpty(),
+                artist = item.mediaMetadata.artist?.toString().orEmpty(),
+            )
+        }
+        if (tracks.isEmpty()) return
+
+        savedQueues.update { queues ->
+            val existing = queues.queues.firstOrNull { it.id == active } ?: return@update queues
+            queues.save(
+                existing.copy(
+                    tracks = tracks,
+                    currentIndex = player.currentMediaItemIndex,
+                    positionMs = player.currentPosition.coerceAtLeast(0L),
+                    updatedAtMs = System.currentTimeMillis(),
+                ),
+            )
+        }
     }
 
     private fun applyAudioChain() {

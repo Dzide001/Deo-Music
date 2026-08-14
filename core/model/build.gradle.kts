@@ -6,3 +6,7 @@ plugins {
 android {
     namespace = "com.deox9.musicplayer.core.model"
 }
+
+dependencies {
+    testImplementation(libs.junit)
+}
