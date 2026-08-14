@@ -112,6 +112,7 @@ import com.deox9.musicplayer.library.LocalMusicRepository
 import com.deox9.musicplayer.scanner.LibraryScanWorker
 import com.deox9.musicplayer.ui.AlbumSortOption
 import com.deox9.musicplayer.ui.CollectionSortOption
+import com.deox9.musicplayer.ui.LibraryTab
 import com.deox9.musicplayer.ui.NavigationStyle
 import com.deox9.musicplayer.ui.SongSortOption
 import com.deox9.musicplayer.ui.isDebugBuild
@@ -197,17 +198,6 @@ private enum class RootDestination(
     val available: Boolean get() = this != Web || WebPlayback.IS_AVAILABLE
 }
 
-private enum class LocalCategoryTab {
-    Songs,
-    Albums,
-    Artists,
-    Playlists,
-    Folders,
-    Genres,
-    Suggested,
-    Favourites
-}
-
 /**
  * Asks for POST_NOTIFICATIONS once on API 33+.
  *
@@ -240,7 +230,7 @@ private fun RequestNotificationPermission() {
 private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
     val context = LocalContext.current
     var destination by rememberSaveable { mutableStateOf(RootDestination.Library) }
-    var localTab by rememberSaveable { mutableStateOf(LocalCategoryTab.Songs) }
+    var localTab by rememberSaveable { mutableStateOf(LibraryTab.Songs) }
     var localSearchQuery by rememberSaveable { mutableStateOf("") }
     var searchActive by rememberSaveable { mutableStateOf(false) }
     var appliedLocalSearchQuery by rememberSaveable { mutableStateOf("") }
@@ -268,6 +258,14 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
     // Null means "nothing loaded", which is what the rest of the UI already
     // branches on. Everything else reads straight off the bound controller.
     val session = playbackState.takeIf { it.hasTrack }
+    val rootSettings by viewModel.settings.collectAsState()
+    val visibleTabs = rootSettings.tabs.visible
+
+    // A tab that has just been hidden must not stay selected, or the library shows
+    // content for something no longer in the strip and nothing looks selected.
+    LaunchedEffect(visibleTabs) {
+        if (localTab !in visibleTabs) localTab = visibleTabs.first()
+    }
     val snackbarHostState = remember { SnackbarHostState() }
 
     RequestNotificationPermission()
@@ -522,7 +520,7 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
                         destination = RootDestination.Library
                         // The Artists tab exists now, so "go to artist" lands on the
                         // artist rather than on a song list filtered by their name.
-                        localTab = LocalCategoryTab.Artists
+                        localTab = LibraryTab.Artists
                         localSearchQuery = artistName
                         appliedLocalSearchQuery = artistName
                         searchActive = true
@@ -531,7 +529,7 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
                     },
                     onViewAlbum = { albumName ->
                         destination = RootDestination.Library
-                        localTab = LocalCategoryTab.Albums
+                        localTab = LibraryTab.Albums
                         localSearchQuery = albumName
                         appliedLocalSearchQuery = albumName
                         searchActive = true
@@ -561,46 +559,47 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
 
                     if (destination == RootDestination.Library) {
                         Column(modifier = Modifier.fillMaxSize()) {
-                            LocalCategoryTabs(
+                            LibraryTabs(
                                 selected = localTab,
+                                tabs = visibleTabs,
                                 onSelect = { localTab = it }
                             )
                             Box(modifier = Modifier.weight(1f)) {
                                 when (localTab) {
-                                    LocalCategoryTab.Songs -> LibraryScreen(
+                                    LibraryTab.Songs -> LibraryScreen(
                                         searchQuery = appliedLocalSearchQuery,
                                         sortOption = songSortOption,
                                         listState = listStates.songs
                                     )
-                                    LocalCategoryTab.Albums -> AlbumsScreen(
+                                    LibraryTab.Albums -> AlbumsScreen(
                                         searchQuery = appliedLocalSearchQuery,
                                         sortOption = albumSortOption,
                                         listState = listStates.albums
                                     )
-                                    LocalCategoryTab.Artists -> ArtistsScreen(
+                                    LibraryTab.Artists -> ArtistsScreen(
                                         searchQuery = appliedLocalSearchQuery,
                                         sortOption = collectionSortOption,
                                         listState = listStates.artists
                                     )
-                                    LocalCategoryTab.Playlists -> PlaylistsScreen(
+                                    LibraryTab.Playlists -> PlaylistsScreen(
                                         searchQuery = appliedLocalSearchQuery,
                                         sortOption = collectionSortOption,
                                         listState = listStates.playlists
                                     )
-                                    LocalCategoryTab.Folders -> FoldersScreen(
+                                    LibraryTab.Folders -> FoldersScreen(
                                         searchQuery = appliedLocalSearchQuery,
                                         sortOption = collectionSortOption,
                                         listState = listStates.folders
                                     )
-                                    LocalCategoryTab.Genres -> GenresScreen(
+                                    LibraryTab.Genres -> GenresScreen(
                                         searchQuery = appliedLocalSearchQuery,
                                         sortOption = collectionSortOption,
                                         listState = listStates.genres
                                     )
-                                    LocalCategoryTab.Suggested -> SuggestedScreen(
+                                    LibraryTab.Suggested -> SuggestedScreen(
                                         listState = listStates.suggested
                                     )
-                                    LocalCategoryTab.Favourites -> FavouritesScreen(
+                                    LibraryTab.Favourites -> FavouritesScreen(
                                         searchQuery = appliedLocalSearchQuery,
                                         sortOption = songSortOption,
                                         listState = listStates.favourites
@@ -704,7 +703,7 @@ private fun DestinationIcon(destination: RootDestination, selected: Boolean) {
 @Composable
 private fun AppHeader(
     destination: RootDestination,
-    localTab: LocalCategoryTab,
+    localTab: LibraryTab,
     searchActive: Boolean,
     onSearchActiveChange: (Boolean) -> Unit,
     localSearchQuery: String,
@@ -798,7 +797,7 @@ private fun AppHeader(
 @Composable
 private fun HeaderSearchField(
     destination: RootDestination,
-    localTab: LocalCategoryTab,
+    localTab: LibraryTab,
     localSearchQuery: String,
     webSearchQuery: String,
     onLocalSearchChange: (String) -> Unit,
@@ -839,7 +838,7 @@ private fun HeaderSearchField(
             singleLine = true,
             placeholder = {
                 Text(
-                    if (isLibrary) "Filter ${localTab.label().lowercase()}" else "Search the web"
+                    if (isLibrary) "Filter ${localTab.label.lowercase()}" else "Search the web"
                 )
             },
             colors = TextFieldDefaults.colors(
@@ -960,34 +959,28 @@ private fun DebugPerformanceOverlay(modifier: Modifier = Modifier) {
  * reachable without the seven-chip horizontal scroller hiding half of them.
  */
 @Composable
-private fun LocalCategoryTabs(
-    selected: LocalCategoryTab,
-    onSelect: (LocalCategoryTab) -> Unit
+private fun LibraryTabs(
+    selected: LibraryTab,
+    tabs: List<LibraryTab>,
+    onSelect: (LibraryTab) -> Unit
 ) {
+    if (tabs.isEmpty()) return
     PrimaryScrollableTabRow(
-        selectedTabIndex = LocalCategoryTab.entries.indexOf(selected),
+        // Against the visible list, not the enum: with tabs hidden or reordered the
+        // enum's index points at a different tab, and the indicator would sit under
+        // the wrong one.
+        selectedTabIndex = tabs.indexOf(selected).coerceAtLeast(0),
         edgePadding = 12.dp,
         divider = { HorizontalDivider() },
     ) {
-        LocalCategoryTab.entries.forEach { tab ->
+        tabs.forEach { tab ->
             Tab(
                 selected = selected == tab,
                 onClick = { onSelect(tab) },
-                text = { Text(tab.label()) },
+                text = { Text(tab.label) },
             )
         }
     }
-}
-
-private fun LocalCategoryTab.label(): String = when (this) {
-    LocalCategoryTab.Songs -> "Songs"
-    LocalCategoryTab.Albums -> "Albums"
-    LocalCategoryTab.Artists -> "Artists"
-    LocalCategoryTab.Playlists -> "Playlists"
-    LocalCategoryTab.Folders -> "Folders"
-    LocalCategoryTab.Genres -> "Genres"
-    LocalCategoryTab.Suggested -> "Suggested"
-    LocalCategoryTab.Favourites -> "Favourites"
 }
 
 /** Which family of sort options a library tab offers, if any. */
@@ -1000,14 +993,14 @@ private enum class SortFamily { Song, Album, Collection, None }
  * one of which had grown complex enough for detekt to flag it. Exhaustive on the enum,
  * so adding a tab is a compile error here rather than a silent "no sort options".
  */
-private fun LocalCategoryTab.sortFamily(): SortFamily = when (this) {
-    LocalCategoryTab.Songs, LocalCategoryTab.Favourites -> SortFamily.Song
-    LocalCategoryTab.Albums -> SortFamily.Album
-    LocalCategoryTab.Artists,
-    LocalCategoryTab.Playlists,
-    LocalCategoryTab.Folders,
-    LocalCategoryTab.Genres -> SortFamily.Collection
-    LocalCategoryTab.Suggested -> SortFamily.None
+private fun LibraryTab.sortFamily(): SortFamily = when (this) {
+    LibraryTab.Songs, LibraryTab.Favourites -> SortFamily.Song
+    LibraryTab.Albums -> SortFamily.Album
+    LibraryTab.Artists,
+    LibraryTab.Playlists,
+    LibraryTab.Folders,
+    LibraryTab.Genres -> SortFamily.Collection
+    LibraryTab.Suggested -> SortFamily.None
 }
 
 @Composable

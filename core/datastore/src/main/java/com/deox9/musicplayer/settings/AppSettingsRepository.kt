@@ -19,6 +19,8 @@ import com.deox9.musicplayer.audio.EqBandType
 import com.deox9.musicplayer.audio.OutputProfile
 import com.deox9.musicplayer.audio.OutputProfiles
 import com.deox9.musicplayer.audio.ShuffleMode
+import com.deox9.musicplayer.ui.LibraryTab
+import com.deox9.musicplayer.ui.LibraryTabPreferences
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -129,6 +131,8 @@ data class AppSettings(
      * Album and folder shuffle need the queue reordered rather than a flag set.
      */
     val shuffleMode: ShuffleMode = ShuffleMode.Off,
+    /** Which library tabs are shown, and in what order. */
+    val tabs: LibraryTabPreferences = LibraryTabPreferences(),
 )
 
 class AppSettingsRepository(private val context: Context) {
@@ -145,6 +149,7 @@ class AppSettingsRepository(private val context: Context) {
                 .withAppearance(prefs)
                 .withAudio(prefs)
                 .withLibraryFilters(prefs)
+                .withTabs(prefs)
         }
     }
 
@@ -180,6 +185,23 @@ class AppSettingsRepository(private val context: Context) {
             ),
         )
     }
+
+    /**
+     * Tab order and visibility.
+     *
+     * Names are stored, and an unknown one is dropped rather than throwing: a
+     * downgrade that removes a tab must not make the whole settings file unreadable.
+     */
+    private fun AppSettings.withTabs(prefs: Preferences) = copy(
+        tabs = LibraryTabPreferences(
+            order = prefs[Keys.TAB_ORDER].orEmpty()
+                .split(',')
+                .mapNotNull { name -> LibraryTab.entries.firstOrNull { it.name == name } },
+            hidden = (prefs[Keys.HIDDEN_TABS] ?: emptySet())
+                .mapNotNull { name -> LibraryTab.entries.firstOrNull { it.name == name } }
+                .toSet(),
+        ),
+    )
 
     private fun AppSettings.withLibraryFilters(prefs: Preferences) = copy(
         hiddenFolders = prefs[Keys.HIDDEN_FOLDERS] ?: emptySet(),
@@ -372,8 +394,17 @@ class AppSettingsRepository(private val context: Context) {
             prefs[Keys.HIDDEN_FOLDERS] = emptySet()
             prefs[Keys.MIN_TRACK_DURATION_MS] = 0L
             prefs[Keys.SHUFFLE_MODE] = ShuffleMode.Off.name
+            prefs[Keys.TAB_ORDER] = LibraryTab.entries.joinToString(",") { it.name }
+            prefs[Keys.HIDDEN_TABS] = emptySet()
             prefs[Keys.OUTPUT_PROFILES_ENABLED] = false
             prefs[Keys.OUTPUT_PROFILES_JSON] = encodeOutputProfiles(emptyMap())
+        }
+    }
+
+    suspend fun setTabPreferences(tabs: LibraryTabPreferences) {
+        context.appSettingsDataStore.edit { prefs ->
+            prefs[Keys.TAB_ORDER] = tabs.resolvedOrder.joinToString(",") { it.name }
+            prefs[Keys.HIDDEN_TABS] = tabs.hidden.map { it.name }.toSet()
         }
     }
 
@@ -600,6 +631,8 @@ class AppSettingsRepository(private val context: Context) {
         val HIDDEN_FOLDERS = stringSetPreferencesKey("hidden_folders")
         val MIN_TRACK_DURATION_MS = longPreferencesKey("min_track_duration_ms")
         val SHUFFLE_MODE = stringPreferencesKey("shuffle_mode")
+        val TAB_ORDER = stringPreferencesKey("tab_order")
+        val HIDDEN_TABS = stringSetPreferencesKey("hidden_tabs")
         val OUTPUT_PROFILES_ENABLED = booleanPreferencesKey("output_profiles_enabled")
         val OUTPUT_PROFILES_JSON = stringPreferencesKey("output_profiles_json")
     }

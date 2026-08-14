@@ -10,6 +10,7 @@ import com.deox9.musicplayer.designsystem.ThemeMode
 import com.deox9.musicplayer.designsystem.storedValue
 import com.deox9.musicplayer.settings.AppSettings
 import com.deox9.musicplayer.settings.AppSettingsRepository
+import com.deox9.musicplayer.ui.LibraryTab
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -84,6 +85,14 @@ class SettingsViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
             initialValue = AppSettings(),
         )
+
+    fun toggleTab(tab: LibraryTab) = edit {
+        repository.setTabPreferences(settings.value.tabs.toggleHidden(tab))
+    }
+
+    fun moveTab(tab: LibraryTab, by: Int) = edit {
+        repository.setTabPreferences(settings.value.tabs.move(tab, by))
+    }
 
     fun unhideFolder(path: String) = edit { repository.unhideFolder(path) }
 

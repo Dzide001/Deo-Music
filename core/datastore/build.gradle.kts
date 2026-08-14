@@ -14,6 +14,8 @@ dependencies {
     api(projects.core.audio)
     // For BackupSettingsBridge, which lives in the leaf module both ends can see.
     implementation(projects.core.model)
+    // LibraryTab lives with the other UI enums the settings screen already uses.
+    implementation(projects.core.ui)
     implementation(libs.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
 

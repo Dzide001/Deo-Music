@@ -38,6 +38,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -160,6 +162,8 @@ fun SettingsSheet(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            LibraryTabSection(settings, viewModel)
 
             LibraryFilterSection(settings, viewModel)
 
@@ -452,5 +456,61 @@ private fun LibraryFilterSection(settings: AppSettings, viewModel: SettingsViewM
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/**
+ * Which library tabs are shown, and in what order.
+ *
+ * Eight tabs do not fit on a phone, so the strip scrolls and the ones someone never
+ * opens cost them a swipe every time they want the ones they do.
+ *
+ * Arrows rather than drag-to-reorder: a drag handle inside a scrolling sheet fights
+ * the sheet for the same gesture, and arrows are the version a screen reader can
+ * operate at all.
+ */
+@Composable
+private fun LibraryTabSection(settings: AppSettings, viewModel: SettingsViewModel) {
+    Spacer(modifier = Modifier.height(16.dp))
+    Text("Library tabs", style = MaterialTheme.typography.titleSmall)
+    Text(
+        text = "Hide the ones you do not use, and put the rest in the order you want.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(modifier = Modifier.height(8.dp))
+
+    val order = settings.tabs.resolvedOrder
+    order.forEachIndexed { index, tab ->
+        val shown = tab !in settings.tabs.hidden
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = tab.label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (shown) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(
+                onClick = { viewModel.moveTab(tab, -1) },
+                enabled = index > 0,
+            ) { Text("Up") }
+            TextButton(
+                onClick = { viewModel.moveTab(tab, 1) },
+                enabled = index < order.size - 1,
+            ) { Text("Down") }
+            Switch(
+                checked = shown,
+                onCheckedChange = { viewModel.toggleTab(tab) },
+                // Named, or a screen reader hears eight unlabelled switches in a row.
+                modifier = Modifier.semantics { contentDescription = "Show ${tab.label}" },
+            )
+        }
     }
 }
