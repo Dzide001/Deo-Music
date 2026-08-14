@@ -70,6 +70,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -260,15 +261,7 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
     var webPlaybackView by remember { mutableStateOf<WebView?>(null) }
     var lastPausedWebForLocalUri by rememberSaveable { mutableStateOf("") }
 
-    val songsListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
-    val albumsListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
-    val artistsListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
-    val playlistsListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
-    val foldersListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
-    val genresListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
-    val suggestedListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
-    val favouritesListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
-    val searchListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+    val listStates = rememberLibraryListStates()
 
     val playback = viewModel.playback
     val playbackState by playback.state.collectAsState()
@@ -563,7 +556,7 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
                     }
 
                     if (destination == RootDestination.Search) {
-                        SearchScreen(listState = searchListState)
+                        SearchScreen(listState = listStates.search)
                     }
 
                     if (destination == RootDestination.Library) {
@@ -577,40 +570,40 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
                                     LocalCategoryTab.Songs -> LibraryScreen(
                                         searchQuery = appliedLocalSearchQuery,
                                         sortOption = songSortOption,
-                                        listState = songsListState
+                                        listState = listStates.songs
                                     )
                                     LocalCategoryTab.Albums -> AlbumsScreen(
                                         searchQuery = appliedLocalSearchQuery,
                                         sortOption = albumSortOption,
-                                        listState = albumsListState
+                                        listState = listStates.albums
                                     )
                                     LocalCategoryTab.Artists -> ArtistsScreen(
                                         searchQuery = appliedLocalSearchQuery,
                                         sortOption = collectionSortOption,
-                                        listState = artistsListState
+                                        listState = listStates.artists
                                     )
                                     LocalCategoryTab.Playlists -> PlaylistsScreen(
                                         searchQuery = appliedLocalSearchQuery,
                                         sortOption = collectionSortOption,
-                                        listState = playlistsListState
+                                        listState = listStates.playlists
                                     )
                                     LocalCategoryTab.Folders -> FoldersScreen(
                                         searchQuery = appliedLocalSearchQuery,
                                         sortOption = collectionSortOption,
-                                        listState = foldersListState
+                                        listState = listStates.folders
                                     )
                                     LocalCategoryTab.Genres -> GenresScreen(
                                         searchQuery = appliedLocalSearchQuery,
                                         sortOption = collectionSortOption,
-                                        listState = genresListState
+                                        listState = listStates.genres
                                     )
                                     LocalCategoryTab.Suggested -> SuggestedScreen(
-                                        listState = suggestedListState
+                                        listState = listStates.suggested
                                     )
                                     LocalCategoryTab.Favourites -> FavouritesScreen(
                                         searchQuery = appliedLocalSearchQuery,
                                         sortOption = songSortOption,
-                                        listState = favouritesListState
+                                        listState = listStates.favourites
                                     )
                                 }
                             }
@@ -1058,3 +1051,39 @@ private fun <T> SortOptions(
         )
     }
 }
+
+/**
+ * One scroll position per library list, kept while the app is open.
+ *
+ * Nine of them, which is why they are a holder rather than nine locals in the root
+ * composable: they are one idea — "where each tab was left" — and spelling that out
+ * as nine near-identical lines made the root longer without making it clearer.
+ *
+ * Saveable, so the positions survive rotation and process death rather than
+ * snapping every list back to the top.
+ */
+@Stable
+private class LibraryListStates(
+    val songs: LazyListState,
+    val albums: LazyListState,
+    val artists: LazyListState,
+    val playlists: LazyListState,
+    val folders: LazyListState,
+    val genres: LazyListState,
+    val suggested: LazyListState,
+    val favourites: LazyListState,
+    val search: LazyListState,
+)
+
+@Composable
+private fun rememberLibraryListStates(): LibraryListStates = LibraryListStates(
+    songs = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
+    albums = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
+    artists = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
+    playlists = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
+    folders = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
+    genres = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
+    suggested = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
+    favourites = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
+    search = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
+)

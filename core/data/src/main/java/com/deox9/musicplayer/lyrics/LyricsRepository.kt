@@ -94,7 +94,9 @@ class LyricsRepository(
                 }
             }.sortedBy { it.timeMs }
 
-            if (plain.isBlank() && synced.isEmpty()) null else {
+            if (plain.isBlank() && synced.isEmpty()) {
+                null
+            } else {
                 LyricsData(
                     plainLyrics = plain,
                     syncedLines = synced,

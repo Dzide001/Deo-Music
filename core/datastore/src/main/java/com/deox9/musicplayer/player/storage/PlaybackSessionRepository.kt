@@ -47,21 +47,16 @@ class PlaybackSessionRepository(
 
     suspend fun getLatest(): PlaybackSessionEntity? = observe().first()
 
-    suspend fun save(
-        uri: String,
-        title: String,
-        artist: String,
-        positionMs: Long,
-        durationMs: Long,
-        isPlaying: Boolean,
-        queue: List<QueueItem>,
-        currentIndex: Int,
-        shuffleEnabled: Boolean = false,
-        repeatMode: Int = 0,
-        playerVolume: Float = 1f,
-        album: String = "",
-        albumArtUri: String = ""
-    ) {
+    /**
+     * Writes the session.
+     *
+     * Takes the same type [observe] hands back rather than thirteen positional
+     * parameters. Thirteen of anything is a data class that has not been written
+     * down, and here the class already existed for the read side — so the two ends
+     * of the same record had drifted into different shapes, which is exactly how a
+     * field ends up saved into the wrong column.
+     */
+    suspend fun save(session: PlaybackSessionEntity): Unit = with(session) {
         context.playbackDataStore.edit { prefs ->
             prefs[Keys.URI] = uri
             prefs[Keys.TITLE] = title

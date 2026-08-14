@@ -126,7 +126,9 @@ private fun PlaylistsList(
     onSelect: (PlaylistInfo) -> Unit
 ) {
     val filtered = remember(playlists, searchQuery, sortOption) {
-        val searched = if (searchQuery.isBlank()) playlists else {
+        val searched = if (searchQuery.isBlank()) {
+            playlists
+        } else {
             val q = searchQuery.trim().lowercase()
             playlists.filter { it.name.lowercase().contains(q) }
         }
@@ -212,7 +214,9 @@ private fun FoldersList(
     onSelect: (FolderInfo) -> Unit
 ) {
     val filtered = remember(folders, searchQuery, sortOption) {
-        val searched = if (searchQuery.isBlank()) folders else {
+        val searched = if (searchQuery.isBlank()) {
+            folders
+        } else {
             val q = searchQuery.trim().lowercase()
             folders.filter { it.name.lowercase().contains(q) || it.path.lowercase().contains(q) }
         }
@@ -298,7 +302,9 @@ private fun GenresList(
     onSelect: (GenreInfo) -> Unit
 ) {
     val filtered = remember(genres, searchQuery, sortOption) {
-        val searched = if (searchQuery.isBlank()) genres else {
+        val searched = if (searchQuery.isBlank()) {
+            genres
+        } else {
             val q = searchQuery.trim().lowercase()
             genres.filter { it.name.lowercase().contains(q) }
         }
@@ -587,7 +593,9 @@ fun FavouritesScreen(
             val searched = tracks
                 .filter { it.contentUri in favourites }
                 .filter {
-                    if (searchQuery.isBlank()) true else {
+                    if (searchQuery.isBlank()) {
+                        true
+                    } else {
                         val q = searchQuery.trim().lowercase()
                         it.title.lowercase().contains(q) ||
                             it.artist.lowercase().contains(q) ||

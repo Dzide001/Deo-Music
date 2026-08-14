@@ -144,11 +144,12 @@ private fun WebPlaybackScreen(
     LaunchedEffect(appSettings.webHomeUrl) {
         val homeUrl = normalizeWebUrl(appSettings.webHomeUrl) ?: AppSettingsRepository.DEFAULT_WEB_HOME
         val currentUrl = webView.url.orEmpty()
-        if (
-            searchQuery.trim().length < 2 &&
-            !restoredFromSavedState &&
-            (currentUrl.isBlank() || currentUrl == "about:blank")
-        ) {
+        // Nothing loaded yet, and nothing the user has asked for. Both halves matter:
+        // loading the home page over a restored session throws away where they were,
+        // and loading it over a search discards what they typed.
+        val showingNothing = currentUrl.isBlank() || currentUrl == "about:blank"
+        val userHasNotAskedForAnything = searchQuery.trim().length < 2 && !restoredFromSavedState
+        if (showingNothing && userHasNotAskedForAnything) {
             fallbackTriggered = false
             webView.loadUrl(homeUrl)
         }
@@ -225,7 +226,6 @@ private fun WebPlaybackScreen(
     }
 }
 
-
 private class HardenedWebViewClient(
     private val onBlocked: (String) -> Unit,
     private val onMainFrameError: (Int, String) -> Unit,
@@ -259,43 +259,43 @@ private class HardenedWebViewClient(
 }
 
 private fun injectYouTubeAdSkipper(webView: WebView) {
-        val script = """
-                (function() {
-                    if (window.__deoAdSkipInstalled) return;
-                    window.__deoAdSkipInstalled = true;
+    val script = """
+            (function() {
+                if (window.__deoAdSkipInstalled) return;
+                window.__deoAdSkipInstalled = true;
 
-                    function clickIfVisible(el) {
-                        if (!el) return false;
-                        const style = window.getComputedStyle(el);
-                        if (style && style.display !== 'none' && style.visibility !== 'hidden') {
-                            try { el.click(); return true; } catch (e) { return false; }
-                        }
-                        return false;
+                function clickIfVisible(el) {
+                    if (!el) return false;
+                    const style = window.getComputedStyle(el);
+                    if (style && style.display !== 'none' && style.visibility !== 'hidden') {
+                        try { el.click(); return true; } catch (e) { return false; }
                     }
+                    return false;
+                }
 
-                    function skipAds() {
+                function skipAds() {
                         // Desktop YouTube controls
-                        clickIfVisible(document.querySelector('.ytp-ad-skip-button'));
-                        clickIfVisible(document.querySelector('.ytp-ad-skip-button-modern'));
-                        clickIfVisible(document.querySelector('.ytp-ad-overlay-close-button'));
+                    clickIfVisible(document.querySelector('.ytp-ad-skip-button'));
+                    clickIfVisible(document.querySelector('.ytp-ad-skip-button-modern'));
+                    clickIfVisible(document.querySelector('.ytp-ad-overlay-close-button'));
 
                         // Mobile YouTube controls
-                        clickIfVisible(document.querySelector('.ytmAdSkipButton'));
-                        clickIfVisible(document.querySelector('button[aria-label*="Skip" i]'));
-                        clickIfVisible(document.querySelector('button[aria-label*="Close" i]'));
+                    clickIfVisible(document.querySelector('.ytmAdSkipButton'));
+                    clickIfVisible(document.querySelector('button[aria-label*="Skip" i]'));
+                    clickIfVisible(document.querySelector('button[aria-label*="Close" i]'));
 
-                        const video = document.querySelector('video');
-                        if (video) {
-                            try { video.muted = false; } catch (e) {}
-                        }
+                    const video = document.querySelector('video');
+                    if (video) {
+                        try { video.muted = false; } catch (e) {}
                     }
-                    window.__deoAdSkipTimer = setInterval(skipAds, 400);
-                    document.addEventListener('visibilitychange', skipAds, { passive: true });
-                    skipAds();
-                })();
-        """.trimIndent()
+                }
+                window.__deoAdSkipTimer = setInterval(skipAds, 400);
+                document.addEventListener('visibilitychange', skipAds, { passive: true });
+                skipAds();
+            })();
+    """.trimIndent()
 
-        webView.evaluateJavascript(script, null)
+    webView.evaluateJavascript(script, null)
 }
 
 private fun pauseWebPlayback(webView: WebView?) {
@@ -314,84 +314,83 @@ private fun pauseWebPlayback(webView: WebView?) {
     webView.evaluateJavascript(script, null)
 }
 
+/**
+ * Whether a request is an ad, a tracker or telemetry rather than the page itself.
+ *
+ * The lists are the whole substance and they are checked against four different
+ * parts of the URL, which is why this reads as four passes rather than one
+ * expression. Each returns early on a hit; the alternative — one long boolean — was
+ * how it started and made it impossible to see which list a block came from.
+ */
 private fun shouldBlockWebResource(rawUrl: String): Boolean {
     val lower = rawUrl.lowercase()
-    val uri = try { android.net.Uri.parse(rawUrl) } catch (_: Exception) { null }
+    val uri = runCatching { android.net.Uri.parse(rawUrl) }.getOrNull()
     val host = uri?.host?.lowercase() ?: return false
+    val query = uri.query?.lowercase().orEmpty()
 
-    // ========== PRIMARY AD & TRACKER NETWORKS ==========
-    val adNetworks = listOf(
-        // Google Ad Infrastructure
-        "doubleclick.net", "pagead2.googlesyndication.com", "adservice.google",
-        "googlesyndication.com", "googletagservices.com", "googletagmanager.com",
-
-        // YouTube Ad Delivery
-        "ads.youtube.com", "yt.be", "adx.g.doubleclick.net",
-
-        // Third-party ad networks
-        "ad.doubleclick.net", "ads4.google.com", "mads.google.com",
-        "csi.gstatic.com", // Google client error/CSI tracking
-
-        // Analytics & Telemetry
-        "google-analytics.com", "analytics.google.com", "www.googletagmanager.com",
-        "stats.g.doubleclick.net", "analytics.google.com",
-
-        // Additional Tracking Services
-        "tpc.googlesyndication.com", "www.gstatic.com/generate_204",
-        "bat.bing.com", "c.bing.com",
-
-        // YouTube specific tracking
-        "yt-video-upload"
-    )
-
-    if (adNetworks.any { host.contains(it) }) return true
-
-    // ========== PATH PATTERNS (YouTube-focused routes) ==========
-    val blockedPaths = listOf(
-        // YouTube ad delivery endpoints
-        "/api/stats/ads", "/get_ads", "/api/ads", "/js/ads/",
-        "/pagead/", "/gvt1/ads", "/ads?", "/ad_break", "ad_break=",
-
-        // YouTube logging & telemetry
-        "/log_event", "/api/stats", "/youtubei/v1/log_event",
-        "/youtubei/v1/log", "/api/v1/log", "/reporting/", "tracking=",
-
-        // Ad format & unit detection
-        "adformat=", "adunit=", "instream_ad", "yt_ad", "ad_request",
-
-        // Engagement metrics for ads
-        "/api/v1/survey", "/ptracking", "pcs/active", "ping?",
-
-        // Beacon tracking
-        "beacon.scorecardresearch.com", "sb.scorecardresearch.com",
-
-        // Redirect & measurement
-        "/r/", "/t/", "doubleclick_tracking"
-    )
-
-    if (blockedPaths.any { lower.contains(it) }) return true
-
-    // ========== QUERY PARAMETER PATTERNS ==========
-    val query = uri?.query?.lowercase() ?: ""
-    val adQueryParams = listOf(
-        "ad_", "ads_", "adunit", "adformat", "ad_type", "ad_client",
-        "google_afc", "google_ad", "google_gd", "tracking", "utm_",
-        "fbclid", "gclid", "msclkid", "igshid"
-    )
-
-    if (adQueryParams.any { query.contains(it) }) return true
-
-    // ========== FILE TYPE BLOCKING (video ads, banners) ==========
-    val blockedExtensions = listOf(
-        // Video ads formats
-        "vmap.xml", // VAST/VMAP (video ad XML)
-        ".vpaid", ".vast", "ads.js"
-    )
-
-    if (blockedExtensions.any { lower.endsWith(it) }) return true
-
-    return false
+    return AD_HOSTS.any { host.contains(it) } ||
+        AD_PATHS.any { lower.contains(it) } ||
+        AD_QUERY_PARAMS.any { query.contains(it) } ||
+        AD_FILE_SUFFIXES.any { lower.endsWith(it) }
 }
+
+/** Ad, tracker and telemetry hosts. */
+private val AD_HOSTS = listOf(
+    // Google ad infrastructure
+    "doubleclick.net", "pagead2.googlesyndication.com", "adservice.google",
+    "googlesyndication.com", "googletagservices.com", "googletagmanager.com",
+
+    // YouTube ad delivery
+    "ads.youtube.com", "yt.be", "adx.g.doubleclick.net",
+
+    // Third-party ad networks
+    "ad.doubleclick.net", "ads4.google.com", "mads.google.com",
+    "csi.gstatic.com", // Google client error/CSI tracking
+
+    // Analytics and telemetry
+    "google-analytics.com", "analytics.google.com", "www.googletagmanager.com",
+    "stats.g.doubleclick.net",
+
+    // Additional tracking services
+    "tpc.googlesyndication.com", "www.gstatic.com/generate_204",
+    "bat.bing.com", "c.bing.com",
+
+    // YouTube specific tracking
+    "yt-video-upload",
+)
+
+/** Paths that serve ads or carry logging, whatever host they are on. */
+private val AD_PATHS = listOf(
+    // YouTube ad delivery endpoints
+    "/api/stats/ads", "/get_ads", "/api/ads", "/js/ads/",
+    "/pagead/", "/gvt1/ads", "/ads?", "/ad_break", "ad_break=",
+
+    // YouTube logging and telemetry
+    "/log_event", "/api/stats", "/youtubei/v1/log_event",
+    "/youtubei/v1/log", "/api/v1/log", "/reporting/", "tracking=",
+
+    // Ad format and unit detection
+    "adformat=", "adunit=", "instream_ad", "yt_ad", "ad_request",
+
+    // Engagement metrics for ads
+    "/api/v1/survey", "/ptracking", "pcs/active", "ping?",
+
+    // Beacon tracking
+    "beacon.scorecardresearch.com", "sb.scorecardresearch.com",
+
+    // Redirect and measurement
+    "/r/", "/t/", "doubleclick_tracking",
+)
+
+/** Query parameters that only appear on ad or tracking requests. */
+private val AD_QUERY_PARAMS = listOf(
+    "ad_", "ads_", "adunit", "adformat", "ad_type", "ad_client",
+    "google_afc", "google_ad", "google_gd", "tracking", "utm_",
+    "fbclid", "gclid", "msclkid", "igshid",
+)
+
+/** Video-ad and banner formats: VAST/VMAP and friends. */
+private val AD_FILE_SUFFIXES = listOf("vmap.xml", ".vpaid", ".vast", "ads.js")
 
 private fun emptyBlockedResponse(): WebResourceResponse {
     return WebResourceResponse(

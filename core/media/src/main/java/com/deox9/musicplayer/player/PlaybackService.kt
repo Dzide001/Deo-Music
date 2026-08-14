@@ -37,6 +37,7 @@ import com.deox9.musicplayer.audio.resolveChainConfig
 import com.deox9.musicplayer.database.dao.LibraryDao
 import com.deox9.musicplayer.library.AlbumArt
 import com.deox9.musicplayer.library.RecommendationSignalsRepository
+import com.deox9.musicplayer.player.storage.PlaybackSessionEntity
 import com.deox9.musicplayer.player.storage.PlaybackSessionRepository
 import com.deox9.musicplayer.player.storage.QueueItem
 import com.deox9.musicplayer.settings.AppSettingsRepository
@@ -476,19 +477,22 @@ class PlaybackService : MediaSessionService() {
 
         ioScope.launch {
             playbackSessionRepository.save(
-                uri = uri,
-                title = title,
-                artist = artist,
-                positionMs = positionMs,
-                durationMs = durationMs,
-                isPlaying = isPlaying,
-                queue = queue,
-                currentIndex = currentIndex,
-                shuffleEnabled = shuffleEnabled,
-                repeatMode = repeatMode,
-                playerVolume = playerVolume,
-                album = album,
-                albumArtUri = albumArtUri
+                PlaybackSessionEntity(
+                    uri = uri,
+                    title = title,
+                    artist = artist,
+                    positionMs = positionMs,
+                    durationMs = durationMs,
+                    isPlaying = isPlaying,
+                    queue = queue,
+                    currentIndex = currentIndex,
+                    updatedAtMs = System.currentTimeMillis(),
+                    shuffleEnabled = shuffleEnabled,
+                    repeatMode = repeatMode,
+                    playerVolume = playerVolume,
+                    album = album,
+                    albumArtUri = albumArtUri,
+                ),
             )
         }
     }
