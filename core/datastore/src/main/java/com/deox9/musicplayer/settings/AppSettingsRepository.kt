@@ -18,6 +18,7 @@ import com.deox9.musicplayer.audio.EqBand
 import com.deox9.musicplayer.audio.EqBandType
 import com.deox9.musicplayer.audio.OutputProfile
 import com.deox9.musicplayer.audio.OutputProfiles
+import com.deox9.musicplayer.audio.ShuffleMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -121,6 +122,13 @@ data class AppSettings(
     val hiddenFolders: Set<String> = emptySet(),
     /** Tracks shorter than this are not indexed. Zero means index everything. */
     val minimumTrackDurationMs: Long = 0L,
+    /**
+     * How shuffle groups tracks.
+     *
+     * Separate from the player's own shuffle flag, which only knows "on" or "off".
+     * Album and folder shuffle need the queue reordered rather than a flag set.
+     */
+    val shuffleMode: ShuffleMode = ShuffleMode.Off,
 )
 
 class AppSettingsRepository(private val context: Context) {
@@ -176,6 +184,11 @@ class AppSettingsRepository(private val context: Context) {
     private fun AppSettings.withLibraryFilters(prefs: Preferences) = copy(
         hiddenFolders = prefs[Keys.HIDDEN_FOLDERS] ?: emptySet(),
         minimumTrackDurationMs = prefs[Keys.MIN_TRACK_DURATION_MS] ?: 0L,
+        // Stored by name. An unknown name falls back to Off rather than throwing,
+        // so a downgrade that removes a mode does not make the settings unreadable.
+        shuffleMode = runCatching {
+            ShuffleMode.valueOf(prefs[Keys.SHUFFLE_MODE] ?: ShuffleMode.Off.name)
+        }.getOrDefault(ShuffleMode.Off),
     )
 
     /**
@@ -358,9 +371,14 @@ class AppSettingsRepository(private val context: Context) {
             prefs[Keys.PLAYBACK_PITCH] = 1f
             prefs[Keys.HIDDEN_FOLDERS] = emptySet()
             prefs[Keys.MIN_TRACK_DURATION_MS] = 0L
+            prefs[Keys.SHUFFLE_MODE] = ShuffleMode.Off.name
             prefs[Keys.OUTPUT_PROFILES_ENABLED] = false
             prefs[Keys.OUTPUT_PROFILES_JSON] = encodeOutputProfiles(emptyMap())
         }
+    }
+
+    suspend fun setShuffleMode(mode: ShuffleMode) {
+        context.appSettingsDataStore.edit { prefs -> prefs[Keys.SHUFFLE_MODE] = mode.name }
     }
 
     suspend fun hideFolder(path: String) {
@@ -581,6 +599,7 @@ class AppSettingsRepository(private val context: Context) {
         val PLAYBACK_PITCH = floatPreferencesKey("playback_pitch")
         val HIDDEN_FOLDERS = stringSetPreferencesKey("hidden_folders")
         val MIN_TRACK_DURATION_MS = longPreferencesKey("min_track_duration_ms")
+        val SHUFFLE_MODE = stringPreferencesKey("shuffle_mode")
         val OUTPUT_PROFILES_ENABLED = booleanPreferencesKey("output_profiles_enabled")
         val OUTPUT_PROFILES_JSON = stringPreferencesKey("output_profiles_json")
     }

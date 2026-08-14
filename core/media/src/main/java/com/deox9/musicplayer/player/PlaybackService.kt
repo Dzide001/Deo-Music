@@ -32,9 +32,12 @@ import com.deox9.musicplayer.audio.FadeDirection
 import com.deox9.musicplayer.audio.OutputProfiles
 import com.deox9.musicplayer.audio.OutputRoute
 import com.deox9.musicplayer.audio.ReplayGain
+import com.deox9.musicplayer.audio.ShuffleMode
+import com.deox9.musicplayer.audio.Shuffleable
 import com.deox9.musicplayer.audio.StreamFormat
 import com.deox9.musicplayer.audio.codecLabelFor
 import com.deox9.musicplayer.audio.resolveChainConfig
+import com.deox9.musicplayer.audio.shuffleQueue
 import com.deox9.musicplayer.database.dao.LibraryDao
 import com.deox9.musicplayer.library.AlbumArt
 import com.deox9.musicplayer.library.EmbeddedArtwork
@@ -57,6 +60,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
+import kotlin.random.Random
 
 /**
  * Opts in to the Media3 APIs used here that are still marked unstable: the audio
@@ -114,6 +118,10 @@ class PlaybackService : MediaSessionService() {
     private var eqEnabled: Boolean = false
     private var eqBands: List<EqBand> = emptyList()
     private var resumeAfterInterruption: Boolean = true
+    private var currentShuffleMode: ShuffleMode = ShuffleMode.Off
+
+    /** The queue order before a grouped shuffle, so switching off can restore it. */
+    private var unshuffledOrder: List<String>? = null
     private var outputProfiles: OutputProfiles = OutputProfiles()
     private var outputRoute: OutputRoute = OutputRoute.Speaker
     private val audioProcessor = DeoAudioProcessor()
@@ -328,6 +336,7 @@ class PlaybackService : MediaSessionService() {
                 eqBands = settings.eqBands
                 outputProfiles = settings.outputProfiles
                 resumeAfterInterruption = settings.resumeAfterInterruption
+                applyShuffleMode(player, settings.shuffleMode)
                 // Set on the player rather than folded into the DSP: Sonic sits in
                 // the sink's own chain and time-stretches, so pitch stays put when
                 // speed changes instead of the two moving together as they would if
@@ -848,6 +857,65 @@ class PlaybackService : MediaSessionService() {
             currentTrackPeak = stored?.replayGainTrackPeak?.toDouble()
             applyAudioChain()
         }
+    }
+
+    /**
+     * Applies a shuffle mode to the queue.
+     *
+     * Tracks mode is handed to the player, which already has a shuffle order and
+     * does it without disturbing the queue. Album and folder shuffle cannot be a
+     * flag — they reorder the items — so the order the queue arrived in is kept, and
+     * restored when shuffle goes off. Without that, turning shuffle off would leave
+     * the scrambled order behind and there would be no way back to the album.
+     */
+    private fun applyShuffleMode(player: Player, mode: ShuffleMode) {
+        if (mode == currentShuffleMode) return
+        currentShuffleMode = mode
+
+        player.shuffleModeEnabled = mode == ShuffleMode.Tracks
+        if (mode == ShuffleMode.Tracks) return
+
+        if (mode == ShuffleMode.Off) {
+            unshuffledOrder?.let { restoreQueueOrder(player, it) }
+            unshuffledOrder = null
+            return
+        }
+
+        val items = (0 until player.mediaItemCount).map { player.getMediaItemAt(it) }
+        if (items.size < 2) return
+        if (unshuffledOrder == null) unshuffledOrder = items.map { it.mediaId }
+
+        val shuffled = shuffleQueue(items.map(::QueueGrouping), mode, Random.Default)
+        restoreQueueOrder(player, shuffled.map { it.item.mediaId })
+    }
+
+    /**
+     * Puts the queue into the given order, keeping what is playing playing.
+     *
+     * Rebuilt rather than moved item by item: a sequence of moves has to account for
+     * every index shifting under it, and getting that wrong scrambles the queue in a
+     * way that is very hard to see in a test.
+     */
+    private fun restoreQueueOrder(player: Player, order: List<String>) {
+        val byId = (0 until player.mediaItemCount)
+            .map { player.getMediaItemAt(it) }
+            .associateBy { it.mediaId }
+        val reordered = order.mapNotNull { byId[it] }
+        if (reordered.size != byId.size) return
+
+        val playingId = player.currentMediaItem?.mediaId
+        val position = player.currentPosition
+        val index = reordered.indexOfFirst { it.mediaId == playingId }.coerceAtLeast(0)
+        player.setMediaItems(reordered, index, position)
+        player.prepare()
+    }
+
+    /** Adapts a MediaItem to what the shuffler needs to know about it. */
+    private class QueueGrouping(val item: MediaItem) : Shuffleable {
+        override val groupAlbum: String
+            get() = item.mediaMetadata.albumTitle?.toString().orEmpty()
+        override val groupFolder: String
+            get() = item.localConfiguration?.uri?.toString()?.substringBeforeLast('/').orEmpty()
     }
 
     private fun applyAudioChain() {

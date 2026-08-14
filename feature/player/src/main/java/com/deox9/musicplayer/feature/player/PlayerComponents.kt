@@ -34,6 +34,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.deox9.musicplayer.audio.ShuffleMode
 
 /**
  * Album artwork with a placeholder underneath it.
@@ -85,7 +86,7 @@ internal fun ArtworkImage(
 @Composable
 internal fun TransportControls(
     isPlaying: Boolean,
-    shuffleEnabled: Boolean,
+    shuffleMode: ShuffleMode,
     repeatMode: Int,
     enabled: Boolean,
     accent: Color,
@@ -106,8 +107,16 @@ internal fun TransportControls(
         IconButton(onClick = onShuffle, enabled = enabled) {
             Icon(
                 imageVector = Icons.Filled.Shuffle,
-                contentDescription = if (shuffleEnabled) "Shuffle on" else "Shuffle off",
-                tint = if (shuffleEnabled) accent else inactive,
+                // Names the mode rather than saying "on". Four modes behind one
+                // button is only workable if pressing it tells you where you landed,
+                // and a screen reader gets nothing from a highlighted icon.
+                contentDescription = when (shuffleMode) {
+                    ShuffleMode.Off -> "Shuffle off"
+                    ShuffleMode.Tracks -> "Shuffle tracks"
+                    ShuffleMode.Albums -> "Shuffle albums"
+                    ShuffleMode.Folders -> "Shuffle folders"
+                },
+                tint = if (shuffleMode != ShuffleMode.Off) accent else inactive,
             )
         }
         IconButton(onClick = onPrevious, enabled = enabled) {

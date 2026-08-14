@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.deox9.musicplayer.audio.CrossfadeCurve
 import com.deox9.musicplayer.audio.EqBand
 import com.deox9.musicplayer.audio.OutputProfile
+import com.deox9.musicplayer.audio.ShuffleMode
 import com.deox9.musicplayer.audio.SignalChain
 import com.deox9.musicplayer.library.FavouritesRepository
 import com.deox9.musicplayer.library.LocalMusicRepository
@@ -125,6 +126,23 @@ class PlayerViewModel @Inject constructor(
             durationMs = durationMs,
             allowOnlineLookup = settings.value.onlineLyricsEnabled,
         )
+    }
+
+    /**
+     * Steps to the next shuffle mode.
+     *
+     * A cycle on the existing button rather than a new control: four modes do not
+     * justify a second thing in the transport row, and the icon already says
+     * whether shuffle is doing anything.
+     */
+    fun cycleShuffleMode() = edit {
+        val next = when (settings.value.shuffleMode) {
+            ShuffleMode.Off -> ShuffleMode.Tracks
+            ShuffleMode.Tracks -> ShuffleMode.Albums
+            ShuffleMode.Albums -> ShuffleMode.Folders
+            ShuffleMode.Folders -> ShuffleMode.Off
+        }
+        settingsRepository.setShuffleMode(next)
     }
 
     fun setPlaybackSpeed(speed: Float) = edit { settingsRepository.setPlaybackSpeed(speed) }

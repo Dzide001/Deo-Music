@@ -61,6 +61,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.deox9.musicplayer.audio.ShuffleMode
 import com.deox9.musicplayer.player.PlaybackError
 import com.deox9.musicplayer.player.PlaybackState
 import com.deox9.musicplayer.ui.formatDuration
@@ -91,6 +92,7 @@ fun ExpandedNowPlayingScreen(
     onViewAlbum: (String) -> Unit,
 ) {
     val playback = viewModel.playback
+    val playerSettings by viewModel.settings.collectAsState()
     val favourites by viewModel.favourites.collectAsState()
     val dark = isSystemInDarkTheme()
     val artworkColor by rememberArtworkColor(session?.albumArtUri, dark)
@@ -153,6 +155,8 @@ fun ExpandedNowPlayingScreen(
                     isFavourite = currentUri in favourites,
                     hasTrack = hasTrack,
                     playback = playback,
+                    shuffleMode = playerSettings.shuffleMode,
+                    onCycleShuffle = viewModel::cycleShuffleMode,
                     onGoToArtist = onGoToArtist,
                     onToggleFavourite = { viewModel.toggleFavourite(currentUri) },
                     onOpenQueue = onOpenQueue,
@@ -276,6 +280,8 @@ private fun NowPlayingControls(
     isFavourite: Boolean,
     hasTrack: Boolean,
     playback: com.deox9.musicplayer.player.PlaybackConnection,
+    shuffleMode: ShuffleMode,
+    onCycleShuffle: () -> Unit,
     onGoToArtist: (String) -> Unit,
     onToggleFavourite: () -> Unit,
     onOpenQueue: () -> Unit,
@@ -300,11 +306,11 @@ private fun NowPlayingControls(
 
         TransportControls(
             isPlaying = session?.isPlaying == true,
-            shuffleEnabled = session?.shuffleEnabled == true,
+            shuffleMode = shuffleMode,
             repeatMode = session?.repeatMode ?: REPEAT_OFF,
             enabled = hasTrack,
             accent = accent,
-            onShuffle = playback::toggleShuffle,
+            onShuffle = onCycleShuffle,
             onPrevious = playback::skipPrevious,
             onPlayPause = playback::togglePlayPause,
             onNext = playback::skipNext,
