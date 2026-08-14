@@ -13,6 +13,7 @@ dependencies {
     implementation(projects.core.ui)
     implementation(projects.core.designsystem)
     implementation(projects.core.datastore)
+    implementation(projects.core.data)
 
     implementation(libs.hilt.navigation.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

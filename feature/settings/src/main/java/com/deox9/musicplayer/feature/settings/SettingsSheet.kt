@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.deox9.musicplayer.feature.settings
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -20,6 +24,7 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -41,6 +46,9 @@ import com.deox9.musicplayer.settings.AppSettings
 import com.deox9.musicplayer.ui.isDebugBuild
 import com.deox9.musicplayer.ui.label
 import com.deox9.musicplayer.web.normalizeWebUrl
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -131,6 +139,8 @@ fun SettingsSheet(
                     onCheckedChange = onShowPerfOverlayChange
                 )
             }
+
+            BackupSection(viewModel)
 
             Spacer(modifier = Modifier.height(16.dp))
             OutlinedButton(onClick = onShowLicenses) {
@@ -251,3 +261,104 @@ private fun ThemeModeRow(
         }
     }
 }
+
+/**
+ * Backing up and restoring, through the system file picker.
+ *
+ * The picker rather than a path the app chooses: the file then lives where the user
+ * put it — their own Drive folder, an SD card, a cable to a laptop — and the app
+ * needs no storage permission to write it. It also means the destination is a
+ * document handle, which is why the bytes are handed to a writer here rather than
+ * the view model being given somewhere to save.
+ */
+@Composable
+private fun BackupSection(viewModel: SettingsViewModel) {
+    val context = LocalContext.current
+    val status by viewModel.backupStatus.collectAsState()
+    var confirmRestore by remember { mutableStateOf<Uri?>(null) }
+
+    val appVersion = remember {
+        runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty()
+        }.getOrDefault("")
+    }
+
+    val createFile = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(BACKUP_MIME),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        viewModel.exportBackup(appVersion) { text ->
+            context.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }
+        }
+    }
+
+    val openFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        // Confirmed before anything is written, because a restore changes the
+        // library and there is no undo for it.
+        confirmRestore = uri
+    }
+
+    Spacer(modifier = Modifier.height(16.dp))
+    Text("Backup", style = MaterialTheme.typography.titleSmall)
+    Text(
+        text = "Playlists, favourites and settings, as a file you keep. Nothing is " +
+            "sent anywhere — you choose where it is saved.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(modifier = Modifier.height(8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(onClick = { createFile.launch(defaultBackupName()) }) { Text("Back up") }
+        OutlinedButton(onClick = { openFile.launch(arrayOf(BACKUP_MIME, "text/plain", "*/*")) }) {
+            Text("Restore")
+        }
+    }
+
+    status?.let { message ->
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(message, style = MaterialTheme.typography.bodySmall)
+        TextButton(onClick = viewModel::clearBackupStatus) { Text("Dismiss") }
+    }
+
+    confirmRestore?.let { uri ->
+        AlertDialog(
+            onDismissRequest = { confirmRestore = null },
+            title = { Text("Restore from this file?") },
+            text = {
+                Text(
+                    "Playlists and favourites from the backup are added to what is " +
+                        "already here. Nothing is deleted, and settings in the backup " +
+                        "replace your current ones.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmRestore = null
+                        val text = runCatching {
+                            context.contentResolver.openInputStream(uri)?.use {
+                                it.readBytes().decodeToString()
+                            }
+                        }.getOrNull()
+                        if (text == null) {
+                            viewModel.importBackup("")
+                        } else {
+                            viewModel.importBackup(text)
+                        }
+                    },
+                ) { Text("Restore") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRestore = null }) { Text("Cancel") }
+            },
+        )
+    }
+}
+
+/** Dated, so successive backups do not silently overwrite one another. */
+private fun defaultBackupName(): String {
+    val stamp = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+    return "music-player-backup-$stamp.json"
+}
+
+private const val BACKUP_MIME = "application/json"
