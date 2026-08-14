@@ -9,7 +9,9 @@ android {
 }
 
 dependencies {
-    implementation(projects.core.audio)
+    // api, not implementation: AppSettings exposes CrossfadeSettings and EqBand in
+    // its public shape, so anything reading settings needs those types too.
+    api(projects.core.audio)
     implementation(libs.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
 

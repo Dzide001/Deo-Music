@@ -105,10 +105,17 @@ fun SettingsSheet(
             )
             Spacer(modifier = Modifier.height(8.dp))
             SettingToggleRow(
-                title = "Crossfade (preview)",
-                checked = settings.crossfadeEnabled,
+                title = "Fade when skipping",
+                checked = settings.crossfade.onSkip,
                 onCheckedChange = { enabled ->
-                    viewModel.setCrossfadeEnabled(enabled)
+                    viewModel.setCrossfadeOnSkip(enabled)
+                }
+            )
+            SettingToggleRow(
+                title = "Fade between tracks",
+                checked = settings.crossfade.onAutoAdvance,
+                onCheckedChange = { enabled ->
+                    viewModel.setCrossfadeOnAutoAdvance(enabled)
                 }
             )
 

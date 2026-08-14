@@ -7,8 +7,11 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.deox9.musicplayer.audio.CrossfadeCurve
+import com.deox9.musicplayer.audio.CrossfadeSettings
 import com.deox9.musicplayer.audio.EqBand
 import com.deox9.musicplayer.audio.EqBandType
 import kotlinx.coroutines.flow.Flow
@@ -30,7 +33,14 @@ const val THEME_MODE_UNSET = ""
 
 data class AppSettings(
     val webHomeUrl: String = DEFAULT_WEB_HOME_URL,
-    val crossfadeEnabled: Boolean = false,
+    /**
+     * When to fade between tracks, for how long, and along which curve.
+     *
+     * Replaces a bare `crossfadeEnabled` switch. That switch could only mean "fade
+     * everywhere", which is the setting nobody wants: it dug a hole in every album
+     * as well as smoothing every skip.
+     */
+    val crossfade: CrossfadeSettings = CrossfadeSettings(),
     /**
      * Superseded by [themeMode]. Kept so an existing preference can be read once and
      * carried across; nothing writes it any more.
@@ -67,7 +77,7 @@ class AppSettingsRepository(private val context: Context) {
         return context.appSettingsDataStore.data.map { prefs ->
             AppSettings(
                 webHomeUrl = prefs[Keys.WEB_HOME_URL] ?: DEFAULT_WEB_HOME_URL,
-                crossfadeEnabled = prefs[Keys.CROSSFADE_ENABLED] ?: false,
+                crossfade = readCrossfade(prefs),
                 darkThemeEnabled = prefs[Keys.DARK_THEME_ENABLED] ?: true,
                 themeMode = prefs[Keys.THEME_MODE] ?: THEME_MODE_UNSET,
                 dynamicColorEnabled = prefs[Keys.DYNAMIC_COLOR_ENABLED] ?: true,
@@ -92,10 +102,46 @@ class AppSettingsRepository(private val context: Context) {
         }
     }
 
-    suspend fun setCrossfadeEnabled(enabled: Boolean) {
+    suspend fun setCrossfadeOnSkip(enabled: Boolean) {
         context.appSettingsDataStore.edit { prefs ->
-            prefs[Keys.CROSSFADE_ENABLED] = enabled
+            prefs[Keys.CROSSFADE_ON_SKIP] = enabled
         }
+    }
+
+    suspend fun setCrossfadeOnAutoAdvance(enabled: Boolean) {
+        context.appSettingsDataStore.edit { prefs ->
+            prefs[Keys.CROSSFADE_ON_AUTO_ADVANCE] = enabled
+        }
+    }
+
+    suspend fun setCrossfadeDurationMs(durationMs: Int) {
+        context.appSettingsDataStore.edit { prefs ->
+            prefs[Keys.CROSSFADE_DURATION_MS] =
+                durationMs.coerceIn(CrossfadeSettings.MIN_DURATION_MS, CrossfadeSettings.MAX_DURATION_MS)
+        }
+    }
+
+    suspend fun setCrossfadeCurve(curve: CrossfadeCurve) {
+        context.appSettingsDataStore.edit { prefs ->
+            prefs[Keys.CROSSFADE_CURVE] = curve.name
+        }
+    }
+
+    /**
+     * Reads the fade settings, carrying an old `crossfade_enabled` switch across once.
+     *
+     * Someone who had the old switch on wanted fades, so they get them where a fade
+     * is actually an improvement — on a manual skip — rather than on every album join
+     * as well. Silently turning the feature off for them would be the ruder default.
+     */
+    private fun readCrossfade(prefs: Preferences): CrossfadeSettings {
+        val legacy = prefs[Keys.CROSSFADE_ENABLED]
+        return CrossfadeSettings(
+            onSkip = prefs[Keys.CROSSFADE_ON_SKIP] ?: legacy ?: false,
+            onAutoAdvance = prefs[Keys.CROSSFADE_ON_AUTO_ADVANCE] ?: false,
+            durationMs = prefs[Keys.CROSSFADE_DURATION_MS] ?: CrossfadeSettings.DEFAULT_DURATION_MS,
+            curve = CrossfadeCurve.fromName(prefs[Keys.CROSSFADE_CURVE]),
+        )
     }
 
     suspend fun setDarkThemeEnabled(enabled: Boolean) {
@@ -161,7 +207,10 @@ class AppSettingsRepository(private val context: Context) {
     suspend fun resetDefaults() {
         context.appSettingsDataStore.edit { prefs ->
             prefs[Keys.WEB_HOME_URL] = DEFAULT_WEB_HOME
-            prefs[Keys.CROSSFADE_ENABLED] = false
+            prefs[Keys.CROSSFADE_ON_SKIP] = false
+            prefs[Keys.CROSSFADE_ON_AUTO_ADVANCE] = false
+            prefs[Keys.CROSSFADE_DURATION_MS] = CrossfadeSettings.DEFAULT_DURATION_MS
+            prefs[Keys.CROSSFADE_CURVE] = CrossfadeSettings().curve.name
             prefs[Keys.THEME_MODE] = THEME_MODE_UNSET
             prefs[Keys.DYNAMIC_COLOR_ENABLED] = true
             prefs[Keys.AMOLED_ENABLED] = false
@@ -250,7 +299,14 @@ class AppSettingsRepository(private val context: Context) {
 
     private object Keys {
         val WEB_HOME_URL = stringPreferencesKey("web_home_url")
+
+        // Read once and carried across; nothing writes it any more. It only ever
+        // meant "fade everywhere", which is not a state the new settings can express.
         val CROSSFADE_ENABLED = booleanPreferencesKey("crossfade_enabled")
+        val CROSSFADE_ON_SKIP = booleanPreferencesKey("crossfade_on_skip")
+        val CROSSFADE_ON_AUTO_ADVANCE = booleanPreferencesKey("crossfade_on_auto_advance")
+        val CROSSFADE_DURATION_MS = intPreferencesKey("crossfade_duration_ms")
+        val CROSSFADE_CURVE = stringPreferencesKey("crossfade_curve")
 
         // "gapless_enabled" was removed rather than renamed. DataStore ignores keys
         // nothing reads, so an existing install simply stops consulting it; the value

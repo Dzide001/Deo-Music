@@ -233,6 +233,176 @@ class AudioChainTest {
         assertEquals(config, chain.config)
     }
 
+    // ---- the fade -----------------------------------------------------------
+
+    /** A steady signal at unity, so any change in level is the fade and nothing else. */
+    private fun flat(seconds: Double, level: Float = 0.5f): FloatArray {
+        val frames = (sampleRate * seconds).toInt()
+        return FloatArray(frames * channels) { level }
+    }
+
+    private fun peakPerFrame(buffer: FloatArray): List<Float> =
+        buffer.toList().chunked(channels).map { frame -> frame.maxOf { abs(it) } }
+
+    @Test
+    fun `a fade-out ends in silence and a fade-in starts from it`() {
+        val chain = AudioChain(sampleRate, channels)
+        chain.configure(AudioChainConfig(limiterEnabled = false))
+        val buffer = flat(0.1)
+
+        chain.startFade(CrossfadeCurve.EqualPower, FadeDirection.Out, durationMs = 100)
+        chain.process(buffer, buffer.size / channels)
+
+        val levels = peakPerFrame(buffer)
+        assertEquals(0.5f, levels.first(), 1e-3f)
+        assertTrue("ended at ${levels.last()}", levels.last() < 1e-3f)
+    }
+
+    @Test
+    fun `a fade only ever moves one way`() {
+        val chain = AudioChain(sampleRate, channels)
+        chain.configure(AudioChainConfig(limiterEnabled = false))
+        val buffer = flat(0.1)
+
+        chain.startFade(CrossfadeCurve.Logarithmic, FadeDirection.Out, durationMs = 100)
+        chain.process(buffer, buffer.size / channels)
+
+        peakPerFrame(buffer).zipWithNext { first, second ->
+            assertTrue("rose from $first to $second", second <= first + 1e-6f)
+        }
+    }
+
+    /**
+     * The fade has to survive being split across buffers, because that is the only
+     * way it ever actually arrives — a fade is far longer than one buffer.
+     */
+    @Test
+    fun `a fade carries across buffer boundaries`() {
+        val chain = AudioChain(sampleRate, channels)
+        chain.configure(AudioChainConfig(limiterEnabled = false))
+        chain.startFade(CrossfadeCurve.Linear, FadeDirection.Out, durationMs = 100)
+
+        val levels = mutableListOf<Float>()
+        repeat(10) {
+            val buffer = flat(0.01)
+            chain.process(buffer, buffer.size / channels)
+            levels += peakPerFrame(buffer)
+        }
+
+        assertEquals(0.5f, levels.first(), 1e-3f)
+        assertTrue("ended at ${levels.last()}", levels.last() < 1e-3f)
+        levels.zipWithNext { first, second ->
+            assertTrue("jumped from $first to $second", second <= first + 1e-6f)
+        }
+    }
+
+    /**
+     * A completed fade-out holds silence rather than releasing. Releasing would let
+     * the next track arrive at full level in the gap before its fade-in starts.
+     */
+    @Test
+    fun `a finished fade-out keeps holding silence`() {
+        val chain = AudioChain(sampleRate, channels)
+        chain.configure(AudioChainConfig(limiterEnabled = false))
+        chain.startFade(CrossfadeCurve.Linear, FadeDirection.Out, durationMs = 20)
+
+        repeat(3) {
+            val buffer = flat(0.02)
+            chain.process(buffer, buffer.size / channels)
+        }
+        val after = flat(0.02)
+        chain.process(after, after.size / channels)
+
+        assertTrue("still audible at ${after.max()}", after.max() < 1e-4f)
+        assertTrue(chain.isFading)
+    }
+
+    /** A finished fade-in has nothing left to do and stops costing anything. */
+    @Test
+    fun `a finished fade-in releases the chain`() {
+        val chain = AudioChain(sampleRate, channels)
+        chain.configure(AudioChainConfig(limiterEnabled = false))
+        chain.startFade(CrossfadeCurve.Linear, FadeDirection.In, durationMs = 20)
+
+        repeat(3) {
+            val buffer = flat(0.02)
+            chain.process(buffer, buffer.size / channels)
+        }
+
+        assertFalse(chain.isFading)
+        val after = flat(0.02)
+        chain.process(after, after.size / channels)
+        assertEquals(0.5f, after.max(), 1e-4f)
+    }
+
+    /**
+     * A flush happens between the two halves of a skip. If it cleared the fade, the
+     * signal would snap back to full level for the moment before the fade-in — the
+     * click the fade exists to prevent.
+     */
+    @Test
+    fun `a flush clears the filters but not the fade`() {
+        val chain = AudioChain(sampleRate, channels)
+        chain.configure(AudioChainConfig(limiterEnabled = false))
+        chain.startFade(CrossfadeCurve.Linear, FadeDirection.Out, durationMs = 20)
+        repeat(3) {
+            val buffer = flat(0.02)
+            chain.process(buffer, buffer.size / channels)
+        }
+
+        chain.reset()
+
+        val after = flat(0.02)
+        chain.process(after, after.size / channels)
+        assertTrue("came back at ${after.max()}", after.max() < 1e-4f)
+    }
+
+    @Test
+    fun `clearing a fade returns the signal to full level`() {
+        val chain = AudioChain(sampleRate, channels)
+        chain.configure(AudioChainConfig(limiterEnabled = false))
+        chain.startFade(CrossfadeCurve.Linear, FadeDirection.Out, durationMs = 20)
+        val faded = flat(0.02)
+        chain.process(faded, faded.size / channels)
+
+        chain.clearFade()
+
+        val after = flat(0.02)
+        chain.process(after, after.size / channels)
+        assertEquals(0.5f, after.max(), 1e-4f)
+        assertFalse(chain.isFading)
+    }
+
+    /** Starting a second fade restarts from the new curve rather than queueing. */
+    @Test
+    fun `a new fade replaces one already running`() {
+        val chain = AudioChain(sampleRate, channels)
+        chain.configure(AudioChainConfig(limiterEnabled = false))
+        chain.startFade(CrossfadeCurve.Linear, FadeDirection.Out, durationMs = 1_000)
+        val first = flat(0.05)
+        chain.process(first, first.size / channels)
+
+        chain.startFade(CrossfadeCurve.Linear, FadeDirection.In, durationMs = 100)
+        val second = flat(0.1)
+        chain.process(second, second.size / channels)
+
+        val levels = peakPerFrame(second)
+        assertTrue("began at ${levels.first()}", levels.first() < 1e-3f)
+        assertEquals(0.5f, levels.last(), 1e-2f)
+    }
+
+    /** A chain doing nothing else is still not transparent while it is fading. */
+    @Test
+    fun `a fading chain is not transparent`() {
+        val chain = AudioChain(sampleRate, channels)
+        chain.configure(AudioChainConfig(limiterEnabled = false))
+        assertTrue(chain.isTransparent)
+
+        chain.startFade(CrossfadeCurve.Linear, FadeDirection.Out, durationMs = 100)
+
+        assertFalse(chain.isTransparent)
+    }
+
     private companion object {
         /** Half a percent, to allow for the knee and one-pole envelope settling. */
         const val TOLERANCE_RATIO = 1.005

@@ -35,7 +35,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setWebHomeUrl(url: String) = edit { repository.setWebHomeUrl(url) }
 
-    fun setCrossfadeEnabled(enabled: Boolean) = edit { repository.setCrossfadeEnabled(enabled) }
+    fun setCrossfadeOnSkip(enabled: Boolean) = edit { repository.setCrossfadeOnSkip(enabled) }
+
+    fun setCrossfadeOnAutoAdvance(enabled: Boolean) =
+        edit { repository.setCrossfadeOnAutoAdvance(enabled) }
 
     fun setThemeMode(mode: ThemeMode) = edit { repository.setThemeMode(mode.storedValue()) }
 

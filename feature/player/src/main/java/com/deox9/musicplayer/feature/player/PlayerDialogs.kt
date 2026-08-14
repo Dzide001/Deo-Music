@@ -19,6 +19,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -35,9 +38,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.deox9.musicplayer.audio.CrossfadeCurve
+import com.deox9.musicplayer.audio.CrossfadeSettings
 import com.deox9.musicplayer.audio.EqBand
 import com.deox9.musicplayer.audio.EqBandType
 import com.deox9.musicplayer.library.PlaylistInfo
@@ -450,7 +457,8 @@ private fun AudioSettingsDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                SettingSwitch("Crossfade", settings.crossfadeEnabled, viewModel::setCrossfadeEnabled)
+                FadeSettings(settings.crossfade, viewModel)
+                HorizontalDivider()
                 SettingSwitch("Replay gain", settings.replayGainEnabled, viewModel::setReplayGainEnabled)
 
                 if (settings.replayGainEnabled) {
@@ -636,3 +644,88 @@ private const val CURVE_SAMPLE_RATE = 48_000
 private val EQ_MAX_HEIGHT = 480.dp
 private const val REPLAY_GAIN_MIN_DB = -18f
 private val LYRICS_MAX_HEIGHT = 320.dp
+
+/**
+ * The fade settings.
+ *
+ * Skipping and finishing are two switches rather than one because they are two
+ * different trades. Fading a skip costs nothing — that audio was being abandoned.
+ * Fading the end of a track means fading out music the listener wanted, and it puts
+ * a hole in a continuous album, so it says so rather than leaving it to be
+ * discovered.
+ */
+@Composable
+private fun FadeSettings(crossfade: CrossfadeSettings, viewModel: PlayerViewModel) {
+    SettingSwitch("Fade when skipping", crossfade.onSkip, viewModel::setCrossfadeOnSkip)
+    SettingSwitch(
+        "Fade between tracks",
+        crossfade.onAutoAdvance,
+        viewModel::setCrossfadeOnAutoAdvance,
+    )
+    if (crossfade.onAutoAdvance) {
+        Text(
+            text = "Fades out the end of every track, so albums meant to run together " +
+                "get a gap where there was none.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+
+    if (!crossfade.onSkip && !crossfade.onAutoAdvance) return
+
+    Text(
+        text = "Length: ${crossfade.durationMs} ms",
+        style = MaterialTheme.typography.labelMedium,
+    )
+    Slider(
+        value = crossfade.durationMs.toFloat(),
+        onValueChange = { viewModel.setCrossfadeDurationMs(it.toInt()) },
+        valueRange = fadeRange,
+        modifier = Modifier.semantics {
+            contentDescription = "Fade length, ${crossfade.durationMs} milliseconds"
+        },
+    )
+    if (crossfade.onSkip) {
+        Text(
+            text = "A skip waits for the fade, so this is also how long the next track " +
+                "takes to start.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+
+    Text(text = "Curve", style = MaterialTheme.typography.labelMedium)
+    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+        CrossfadeCurve.entries.forEachIndexed { index, curve ->
+            SegmentedButton(
+                selected = crossfade.curve == curve,
+                onClick = { viewModel.setCrossfadeCurve(curve) },
+                shape = SegmentedButtonDefaults.itemShape(index, CrossfadeCurve.entries.size),
+            ) {
+                Text(curve.label)
+            }
+        }
+    }
+    Text(
+        text = crossfade.curve.explanation,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+private val fadeRange =
+    CrossfadeSettings.MIN_DURATION_MS.toFloat()..CrossfadeSettings.MAX_DURATION_MS.toFloat()
+
+private val CrossfadeCurve.label: String
+    get() = when (this) {
+        CrossfadeCurve.Linear -> "Linear"
+        CrossfadeCurve.EqualPower -> "Equal power"
+        CrossfadeCurve.Logarithmic -> "Logarithmic"
+    }
+
+private val CrossfadeCurve.explanation: String
+    get() = when (this) {
+        CrossfadeCurve.Linear -> "Straight line in volume. Dips slightly in the middle."
+        CrossfadeCurve.EqualPower -> "Holds a steady loudness through the change."
+        CrossfadeCurve.Logarithmic -> "Falls steadily to the ear. Suits longer fades."
+    }

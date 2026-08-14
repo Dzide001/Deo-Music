@@ -9,6 +9,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Format
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -22,7 +23,9 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.deox9.musicplayer.audio.AudioChainConfig
+import com.deox9.musicplayer.audio.CrossfadeSettings
 import com.deox9.musicplayer.audio.EqBand
+import com.deox9.musicplayer.audio.FadeDirection
 import com.deox9.musicplayer.audio.ReplayGain
 import com.deox9.musicplayer.audio.StreamFormat
 import com.deox9.musicplayer.audio.codecLabelFor
@@ -79,13 +82,11 @@ class PlaybackService : MediaSessionService() {
     private lateinit var recommendationSignalsRepository: RecommendationSignalsRepository
     private var positionPersistJob: Job? = null
     private var settingsJob: Job? = null
-    private var crossfadeMonitorJob: Job? = null
-    private var crossfadeEnabled: Boolean = false
-    private var crossfadeInProgress: Boolean = false
-    private var lastCrossfadedMediaId: String? = null
+    private var skipFadeJob: Job? = null
+    private var endOfTrackFadeJob: Job? = null
+    private var crossfade: CrossfadeSettings = CrossfadeSettings()
     private var replayGainEnabled: Boolean = false
     private var replayGainDb: Float = 0f
-    private var transitionVolumeMultiplier: Float = 1f
     private var eqEnabled: Boolean = false
     private var eqBands: List<EqBand> = emptyList()
     private val audioProcessor = DeoAudioProcessor()
@@ -161,6 +162,17 @@ class PlaybackService : MediaSessionService() {
                 if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) {
                     recordSkip(previousMediaId)
                 }
+                // The other half of the end-of-track fade. The outgoing track faded
+                // itself out; this brings the incoming one up from silence. A seek
+                // transition is not handled here — that is the skip's own fade, which
+                // brings the level back itself.
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && crossfade.onAutoAdvance) {
+                    audioProcessor.startFade(
+                        crossfade.curve,
+                        FadeDirection.In,
+                        crossfade.effectiveDurationMs,
+                    )
+                }
                 loadTrackGain(mediaItem)
                 previousMediaId = mediaItem?.mediaId
             }
@@ -173,17 +185,6 @@ class PlaybackService : MediaSessionService() {
                 ) {
                     if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {
                         recordCurrentTrackPlay(player)
-                        if (!crossfadeInProgress) {
-                            lastCrossfadedMediaId = null
-                        }
-                    }
-
-                    if (
-                        events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION) &&
-                        crossfadeEnabled &&
-                        !crossfadeInProgress
-                    ) {
-                        runCrossfadePreview(player)
                     }
 
                     persistCurrentSession(player)
@@ -193,21 +194,12 @@ class PlaybackService : MediaSessionService() {
                         stopPositionPersistence()
                     }
 
-                    val exoPlayer = player as? ExoPlayer
-                    if (exoPlayer != null && player.isPlaying && crossfadeEnabled) {
-                        startCrossfadeMonitor(exoPlayer)
-                    } else {
-                        stopCrossfadeMonitor(exoPlayer)
-                    }
-
-                    if (exoPlayer != null) {
-                        applyEffectivePlayerVolume(exoPlayer)
-                    }
+                    updateFadeState(player)
                 }
             }
         })
 
-        mediaSession = MediaSession.Builder(this, player)
+        mediaSession = MediaSession.Builder(this, FadingPlayer(player))
             .setId(SESSION_ID)
             .setCallback(MediaItemResolver())
             .build()
@@ -216,7 +208,7 @@ class PlaybackService : MediaSessionService() {
 
         settingsJob = mainScope.launch {
             appSettingsRepository.observe().collect { settings ->
-                crossfadeEnabled = settings.crossfadeEnabled
+                crossfade = settings.crossfade
                 replayGainEnabled = settings.replayGainEnabled
                 replayGainDb = settings.replayGainDb
                 eqEnabled = settings.eqEnabled
@@ -228,12 +220,13 @@ class PlaybackService : MediaSessionService() {
                 // padding, and the sink keeps its AudioTrack across a join between
                 // items of the same format — measured in GaplessJoinTest, which is
                 // what makes the claim checkable rather than a comment.
-                if (!settings.crossfadeEnabled) {
-                    stopCrossfadeMonitor(player)
-                    transitionVolumeMultiplier = 1f
+                // Turning fading off has to release any fade currently holding the
+                // signal down, or the setting would leave playback silent until the
+                // next track change.
+                if (!settings.crossfade.onSkip && !settings.crossfade.onAutoAdvance) {
+                    cancelFades()
                 }
-
-                applyEffectivePlayerVolume(player)
+                scheduleEndOfTrackFade(player)
             }
         }
     }
@@ -469,82 +462,125 @@ class PlaybackService : MediaSessionService() {
         positionPersistJob = null
     }
 
-    private fun startCrossfadeMonitor(player: ExoPlayer) {
-        if (crossfadeMonitorJob?.isActive == true) return
-        crossfadeMonitorJob = mainScope.launch {
-            while (isActive) {
-                if (!crossfadeEnabled || !player.isPlaying || crossfadeInProgress || !player.hasNextMediaItem()) {
-                    delay(CROSSFADE_CHECK_INTERVAL_MS)
-                    continue
-                }
+    /**
+     * Puts a fade in front of the track changes the listener asks for.
+     *
+     * This has to be a wrapper rather than a listener, because by the time a
+     * listener hears about a skip it has already happened — and the whole point is
+     * to do something before it does. Controllers call these four; each is
+     * intercepted so a skip from the notification, the watch or the headset button
+     * fades exactly like one from the app.
+     *
+     * Only skips are wrapped. Seeking within a track, play, pause and everything
+     * else pass straight through.
+     */
+    private inner class FadingPlayer(player: Player) : ForwardingPlayer(player) {
 
-                val duration = player.duration
-                if (duration == C.TIME_UNSET || duration <= 0L) {
-                    delay(CROSSFADE_CHECK_INTERVAL_MS)
-                    continue
-                }
+        override fun seekToNext() = fadeOrDo { super.seekToNext() }
 
-                val remaining = duration - player.currentPosition
-                val mediaId = player.currentMediaItem?.mediaId
-                if (
-                    remaining in 0..CROSSFADE_WINDOW_MS &&
-                    !mediaId.isNullOrBlank() &&
-                    mediaId != lastCrossfadedMediaId
-                ) {
-                    lastCrossfadedMediaId = mediaId
-                    performCrossfadeToNext(player)
-                }
+        override fun seekToNextMediaItem() = fadeOrDo { super.seekToNextMediaItem() }
 
-                delay(CROSSFADE_CHECK_INTERVAL_MS)
+        override fun seekToPrevious() = fadeOrDo { super.seekToPrevious() }
+
+        override fun seekToPreviousMediaItem() = fadeOrDo { super.seekToPreviousMediaItem() }
+
+        /**
+         * Fades across the change, or performs it immediately.
+         *
+         * Immediately when there is nothing to fade: fading silence just delays the
+         * skip by the fade duration for no audible benefit, and a listener skipping
+         * while paused would sit watching nothing happen.
+         */
+        private fun fadeOrDo(change: () -> Unit) {
+            if (!crossfade.onSkip || !isPlaying) {
+                change()
+                return
             }
+            fadeAcross(change)
         }
     }
 
-    private fun stopCrossfadeMonitor(player: ExoPlayer?) {
-        crossfadeMonitorJob?.cancel()
-        crossfadeMonitorJob = null
-        crossfadeInProgress = false
-        if (player != null) {
-            transitionVolumeMultiplier = 1f
-            applyEffectivePlayerVolume(player)
-        }
-    }
-
-    private suspend fun performCrossfadeToNext(player: ExoPlayer) {
-        if (!player.hasNextMediaItem() || crossfadeInProgress) return
-        crossfadeInProgress = true
-        try {
-            fadeVolume(player, from = 1f, to = MIN_CROSSFADE_VOLUME, durationMs = CROSSFADE_FADE_MS)
-            if (player.hasNextMediaItem()) {
-                player.seekToNextMediaItem()
-                player.playWhenReady = true
-            }
-            fadeVolume(player, from = MIN_CROSSFADE_VOLUME, to = 1f, durationMs = CROSSFADE_FADE_MS)
-        } finally {
-            crossfadeInProgress = false
-        }
-    }
-
-    private suspend fun fadeVolume(
-        player: ExoPlayer,
-        from: Float,
-        to: Float,
-        durationMs: Long
-    ) {
-        val steps = CROSSFADE_STEPS
-        if (steps <= 0) {
-            player.volume = to
+    /**
+     * Keeps the fade state honest as playback changes.
+     *
+     * Pausing part-way through a fade-out is the case that matters: the fade holds
+     * the signal at silence, so without releasing it here, pressing play would
+     * resume into nothing. A skip's own fade is left alone, because it releases
+     * itself on the other side of the track change.
+     */
+    private fun updateFadeState(player: Player) {
+        if (!player.isPlaying) {
+            endOfTrackFadeJob?.cancel()
+            endOfTrackFadeJob = null
+            if (skipFadeJob?.isActive != true) audioProcessor.clearFade()
             return
         }
-        val stepDelay = (durationMs / steps).coerceAtLeast(10L)
-        val delta = (to - from) / steps
-        transitionVolumeMultiplier = from
-        applyEffectivePlayerVolume(player)
-        repeat(steps) { step ->
-            transitionVolumeMultiplier = (from + (delta * (step + 1))).coerceIn(0f, 1f)
-            applyEffectivePlayerVolume(player)
-            delay(stepDelay)
+        scheduleEndOfTrackFade(player)
+    }
+
+    /**
+     * Schedules the fade that lands on the end of the current track.
+     *
+     * Scheduled rather than polled. The old version woke four times a second to ask
+     * whether the track was nearly over; this sleeps until the moment the fade should
+     * start and is re-armed whenever the position could have changed underneath it.
+     *
+     * It also does not touch the queue. The previous implementation called
+     * seekToNextMediaItem the moment a track came within 1.2 s of its end, which cut
+     * the last second off every track and tore down the AudioTrack that makes the
+     * join gapless. The track is left to finish on its own; only the level is
+     * touched.
+     */
+    private fun scheduleEndOfTrackFade(player: Player) {
+        endOfTrackFadeJob?.cancel()
+        if (!crossfade.onAutoAdvance || !player.isPlaying || !player.hasNextMediaItem()) return
+
+        val duration = player.duration
+        if (duration == C.TIME_UNSET || duration <= 0L) return
+
+        val fadeMs = crossfade.effectiveDurationMs.toLong()
+        val untilFadeStart = duration - player.currentPosition - fadeMs
+        endOfTrackFadeJob = mainScope.launch {
+            if (untilFadeStart > 0) delay(untilFadeStart)
+            audioProcessor.startFade(crossfade.curve, FadeDirection.Out, fadeMs.toInt())
         }
+    }
+
+    /**
+     * Fades out, changes track, fades back in.
+     *
+     * The skip genuinely waits for the fade-out — with one decoder there is no way
+     * to have both tracks audible at once, so the outgoing one has to finish before
+     * the incoming one starts. That is why the duration is short by default: it is a
+     * delay between pressing the button and hearing the result.
+     *
+     * [change] is the seek to perform, so next and previous share this.
+     */
+    private fun fadeAcross(change: () -> Unit) {
+        skipFadeJob?.cancel()
+        val fadeMs = crossfade.effectiveDurationMs
+        skipFadeJob = mainScope.launch {
+            audioProcessor.startFade(crossfade.curve, FadeDirection.Out, fadeMs)
+            delay(fadeMs.toLong())
+            change()
+            audioProcessor.startFade(crossfade.curve, FadeDirection.In, fadeMs)
+        }
+    }
+
+    /**
+     * Drops any fade and returns the signal to full level.
+     *
+     * The safety net for the whole feature. A completed fade-out holds silence until
+     * something releases it, so every path that could leave one stranded — pausing
+     * mid-fade, turning the setting off, an error — has to come through here or
+     * playback simply stays silent.
+     */
+    private fun cancelFades() {
+        skipFadeJob?.cancel()
+        skipFadeJob = null
+        endOfTrackFadeJob?.cancel()
+        endOfTrackFadeJob = null
+        audioProcessor.clearFade()
     }
 
     /**
@@ -607,24 +643,6 @@ class PlaybackService : MediaSessionService() {
         preventClipping = true,
     )
 
-    private fun applyEffectivePlayerVolume(player: ExoPlayer) {
-        player.volume = transitionVolumeMultiplier.coerceIn(0f, 1f)
-    }
-
-    private fun runCrossfadePreview(player: Player) {
-        val exoPlayer = player as? ExoPlayer ?: return
-        if (!player.playWhenReady) return
-
-        mainScope.launch {
-            fadeVolume(
-                player = exoPlayer,
-                from = 0f,
-                to = 1f,
-                durationMs = CROSSFADE_FADE_MS
-            )
-        }
-    }
-
     private fun recordCurrentTrackPlay(player: Player) {
         val current = player.currentMediaItem ?: return
         val uri = current.localConfiguration?.uri?.toString().orEmpty()
@@ -646,7 +664,7 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         mediaSession?.player?.let { persistCurrentSession(it) }
         stopPositionPersistence()
-        stopCrossfadeMonitor(mediaSession?.player as? ExoPlayer)
+        cancelFades()
         settingsJob?.cancel()
         mediaSession?.run {
             player.release()
@@ -673,11 +691,5 @@ class PlaybackService : MediaSessionService() {
         const val PROBE_ONLY = false
 
         const val SESSION_ID = "music-player-session"
-
-        private const val CROSSFADE_CHECK_INTERVAL_MS = 250L
-        private const val CROSSFADE_WINDOW_MS = 1200L
-        private const val CROSSFADE_FADE_MS = 350L
-        private const val CROSSFADE_STEPS = 7
-        private const val MIN_CROSSFADE_VOLUME = 0.15f
     }
 }

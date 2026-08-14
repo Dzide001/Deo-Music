@@ -3,6 +3,7 @@ package com.deox9.musicplayer.feature.player
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.deox9.musicplayer.audio.CrossfadeCurve
 import com.deox9.musicplayer.audio.EqBand
 import com.deox9.musicplayer.audio.SignalChain
 import com.deox9.musicplayer.library.FavouritesRepository
@@ -79,7 +80,15 @@ class PlayerViewModel @Inject constructor(
         lyricsRepository.getLyrics(trackKey, title, artist, album, durationMs)
     }
 
-    fun setCrossfadeEnabled(enabled: Boolean) = edit { settingsRepository.setCrossfadeEnabled(enabled) }
+    fun setCrossfadeOnSkip(enabled: Boolean) = edit { settingsRepository.setCrossfadeOnSkip(enabled) }
+
+    fun setCrossfadeOnAutoAdvance(enabled: Boolean) =
+        edit { settingsRepository.setCrossfadeOnAutoAdvance(enabled) }
+
+    fun setCrossfadeDurationMs(durationMs: Int) =
+        edit { settingsRepository.setCrossfadeDurationMs(durationMs) }
+
+    fun setCrossfadeCurve(curve: CrossfadeCurve) = edit { settingsRepository.setCrossfadeCurve(curve) }
 
     fun setEqEnabled(enabled: Boolean) = edit { settingsRepository.setEqEnabled(enabled) }
 

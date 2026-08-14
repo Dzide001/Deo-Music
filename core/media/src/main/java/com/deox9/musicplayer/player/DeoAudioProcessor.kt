@@ -9,7 +9,10 @@ import androidx.media3.common.audio.BaseAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import com.deox9.musicplayer.audio.AudioChain
 import com.deox9.musicplayer.audio.AudioChainConfig
+import com.deox9.musicplayer.audio.CrossfadeCurve
+import com.deox9.musicplayer.audio.FadeDirection
 import java.nio.ByteBuffer
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Puts the DSP chain into the player's own signal path.
@@ -49,6 +52,43 @@ class DeoAudioProcessor : BaseAudioProcessor() {
         pendingConfig = config
     }
 
+    /**
+     * Asks for a fade, to be started by the audio thread on its next buffer.
+     *
+     * The counter is what makes this work rather than a plain nullable request. The
+     * audio thread cannot clear the request — that would be a write race — and two
+     * identical fades in a row must both happen, so "has this one been started yet"
+     * cannot be answered by comparing the values. A number that only goes up can.
+     *
+     * It also survives the chain being rebuilt underneath a fade, which happens when
+     * the next track has a different sample rate: [onConfigure] forgets what it has
+     * applied, so the fade is simply started again on the new chain.
+     */
+    fun startFade(curve: CrossfadeCurve, direction: FadeDirection, durationMs: Int) {
+        pendingFade = PendingFade(curve, direction, durationMs, requestedFades.incrementAndGet())
+    }
+
+    /** Abandons any fade, returning to full level on the next buffer. */
+    fun clearFade() {
+        pendingFade = null
+        appliedFadeId = requestedFades.get()
+        chain?.clearFade()
+    }
+
+    private data class PendingFade(
+        val curve: CrossfadeCurve,
+        val direction: FadeDirection,
+        val durationMs: Int,
+        val id: Long,
+    )
+
+    private val requestedFades = AtomicLong(0)
+
+    @Volatile
+    private var pendingFade: PendingFade? = null
+
+    private var appliedFadeId = 0L
+
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         // Both encodings have to be handled. Enabling float *output* on the sink is a
         // preference about what reaches the device; it says nothing about what
@@ -69,6 +109,10 @@ class DeoAudioProcessor : BaseAudioProcessor() {
         chain = AudioChain(inputAudioFormat.sampleRate, inputAudioFormat.channelCount).apply {
             configure(pendingConfig)
         }
+        // A new chain has no fade. Forgetting what was applied means an outstanding
+        // one is started again on it, rather than being silently lost because the
+        // next track happened to have a different sample rate.
+        appliedFadeId = 0L
         // Output matches input. The processing is done in float internally either
         // way, so the headroom is real regardless; converting the format as well
         // would change what every stage downstream expects.
@@ -78,6 +122,7 @@ class DeoAudioProcessor : BaseAudioProcessor() {
     override fun queueInput(inputBuffer: ByteBuffer) {
         val chain = chain ?: return
         if (chain.config != pendingConfig) chain.configure(pendingConfig)
+        startPendingFade(chain)
 
         val bytes = inputBuffer.remaining()
         if (bytes == 0) return
@@ -117,6 +162,13 @@ class DeoAudioProcessor : BaseAudioProcessor() {
         output.flip()
     }
 
+    private fun startPendingFade(chain: AudioChain) {
+        val request = pendingFade ?: return
+        if (request.id == appliedFadeId) return
+        appliedFadeId = request.id
+        chain.startFade(request.curve, request.direction, request.durationMs)
+    }
+
     private var scratch = FloatArray(0)
 
     private fun scratchFor(floatCount: Int): FloatArray {
@@ -142,6 +194,8 @@ class DeoAudioProcessor : BaseAudioProcessor() {
     override fun onReset() {
         chain = null
         scratch = FloatArray(0)
+        pendingFade = null
+        appliedFadeId = requestedFades.get()
     }
 
     private companion object {
