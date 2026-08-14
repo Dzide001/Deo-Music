@@ -268,6 +268,18 @@ class PlaybackConnection @Inject constructor(
 
     // ---- Internals ------------------------------------------------------------
 
+    /**
+     * The position right now, straight off the controller.
+     *
+     * Not [state]'s positionMs, which is only as fresh as the last player event —
+     * events fire on play, pause and track change, not while playback simply
+     * continues. Anything that acts on "where we are at this instant", such as
+     * marking a loop point, has to ask rather than read the snapshot, or it acts on
+     * where playback was some seconds ago.
+     */
+    fun currentPositionMs(): Long =
+        controller?.takeIf { it.isConnected }?.currentPosition?.coerceAtLeast(0L) ?: 0L
+
     private inline fun withController(block: MediaController.() -> Unit) {
         controller?.let { if (it.isConnected) it.block() }
     }

@@ -63,8 +63,10 @@ class PlayerViewModel @Inject constructor(
 
     /** Marks the next loop point at wherever playback has reached. */
     fun markAbLoop() {
-        val state = playback.state.value
-        abLoop.mark(state.positionMs, state.uri)
+        // The live position, not the published one: the snapshot only refreshes on
+        // player events, so marking from it puts the point wherever playback was
+        // when it last started rather than where it is now.
+        abLoop.mark(playback.currentPositionMs(), playback.state.value.uri)
     }
 
     fun clearAbLoop() = abLoop.clear()
