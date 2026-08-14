@@ -13,10 +13,10 @@ import com.deox9.musicplayer.library.PlaylistInfo
 import com.deox9.musicplayer.library.RoomLibraryRepository
 import com.deox9.musicplayer.lyrics.LyricsData
 import com.deox9.musicplayer.lyrics.LyricsRepository
+import com.deox9.musicplayer.player.AbLoop
 import com.deox9.musicplayer.player.OutputRouteMonitor
 import com.deox9.musicplayer.player.PlaybackConnection
 import com.deox9.musicplayer.player.PlaybackState
-import com.deox9.musicplayer.player.AbLoop
 import com.deox9.musicplayer.player.SignalChainReporter
 import com.deox9.musicplayer.player.SleepTimer
 import com.deox9.musicplayer.settings.AppSettings
@@ -46,38 +46,35 @@ class PlayerViewModel @Inject constructor(
     private val libraryRepository: RoomLibraryRepository,
     private val lyricsRepository: LyricsRepository,
     private val settingsRepository: AppSettingsRepository,
-    signalChainReporter: SignalChainReporter,
-    private val outputRouteMonitor: OutputRouteMonitor,
-    private val sleepTimer: SleepTimer,
-    private val abLoop: AbLoop,
+    private val playerTools: PlayerTools,
 ) : ViewModel() {
 
     val state: StateFlow<PlaybackState> = playback.state
 
     /** What the audio path is doing, for the signal-chain readout. */
-    val signalChain: StateFlow<SignalChain> = signalChainReporter.chain
+    val signalChain: StateFlow<SignalChain> = playerTools.signalChain.chain
 
-    val sleepTimerState = sleepTimer.state
+    val sleepTimerState = playerTools.sleepTimer.state
 
-    val abLoopState = abLoop.state
+    val abLoopState = playerTools.abLoop.state
 
     /** Marks the next loop point at wherever playback has reached. */
     fun markAbLoop() {
         // The live position, not the published one: the snapshot only refreshes on
         // player events, so marking from it puts the point wherever playback was
         // when it last started rather than where it is now.
-        abLoop.mark(playback.currentPositionMs(), playback.state.value.uri)
+        playerTools.abLoop.mark(playback.currentPositionMs(), playback.state.value.uri)
     }
 
-    fun clearAbLoop() = abLoop.clear()
+    fun clearAbLoop() = playerTools.abLoop.clear()
 
     fun startSleepTimer(minutes: Int, finishTrack: Boolean) =
-        sleepTimer.start(minutes * 60_000L, finishTrack)
+        playerTools.sleepTimer.start(minutes * 60_000L, finishTrack)
 
-    fun cancelSleepTimer() = sleepTimer.cancel()
+    fun cancelSleepTimer() = playerTools.sleepTimer.cancel()
 
     /** Where audio is going, so the equaliser can say what it is editing. */
-    val outputRoute = outputRouteMonitor.route
+    val outputRoute = playerTools.outputRoute.route
 
     fun setOutputProfilesEnabled(enabled: Boolean) =
         edit { settingsRepository.setOutputProfilesEnabled(enabled) }
@@ -85,12 +82,12 @@ class PlayerViewModel @Inject constructor(
     /** Saves whatever the equaliser is currently showing as this output's profile. */
     fun saveProfileForCurrentRoute(bands: List<EqBand>) = edit {
         settingsRepository.saveOutputProfile(
-            OutputProfile(routeKey = outputRouteMonitor.route.value.key, bands = bands),
+            OutputProfile(routeKey = playerTools.outputRoute.route.value.key, bands = bands),
         )
     }
 
     fun deleteProfileForCurrentRoute() = edit {
-        settingsRepository.deleteOutputProfile(outputRouteMonitor.route.value.key)
+        settingsRepository.deleteOutputProfile(playerTools.outputRoute.route.value.key)
     }
 
     val favourites: StateFlow<Set<String>> = favouritesRepository.observe()
@@ -168,3 +165,19 @@ class PlayerViewModel @Inject constructor(
         const val STOP_TIMEOUT_MS = 5_000L
     }
 }
+
+/**
+ * The playback-domain singletons the player screen needs.
+ *
+ * Four separate constructor parameters put this view model over the limit, and the
+ * limit is right: a constructor is a list of what something depends on, and ten
+ * entries stops being readable as one. These four are all the same kind of thing —
+ * process-wide state the service publishes and the UI observes — so they travel
+ * together.
+ */
+class PlayerTools @Inject constructor(
+    val signalChain: SignalChainReporter,
+    val outputRoute: OutputRouteMonitor,
+    val sleepTimer: SleepTimer,
+    val abLoop: AbLoop,
+)
