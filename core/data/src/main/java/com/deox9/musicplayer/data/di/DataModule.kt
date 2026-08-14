@@ -2,7 +2,9 @@
 package com.deox9.musicplayer.data.di
 
 import android.content.Context
+import com.deox9.musicplayer.database.dao.LibraryDao
 import com.deox9.musicplayer.library.LocalMusicRepository
+import com.deox9.musicplayer.lyrics.EmbeddedLyrics
 import com.deox9.musicplayer.lyrics.LyricsRepository
 import dagger.Module
 import dagger.Provides
@@ -31,5 +33,7 @@ object DataModule {
     @Singleton
     fun provideLyricsRepository(
         @ApplicationContext context: Context,
-    ): LyricsRepository = LyricsRepository(context)
+        embeddedLyrics: EmbeddedLyrics,
+        dao: LibraryDao,
+    ): LyricsRepository = LyricsRepository(context, embeddedLyrics, dao)
 }

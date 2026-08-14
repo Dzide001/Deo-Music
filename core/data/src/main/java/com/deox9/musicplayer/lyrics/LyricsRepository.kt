@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.deox9.musicplayer.database.dao.LibraryDao
 import kotlinx.coroutines.flow.first
 import org.json.JSONArray
 import org.json.JSONObject
@@ -29,8 +30,18 @@ data class LyricsData(
 )
 
 class LyricsRepository(
-    private val context: Context
+    private val context: Context,
+    private val embeddedLyrics: EmbeddedLyrics,
+    private val dao: LibraryDao
 ) {
+    /**
+     * Lyrics for a track, from the nearest source that has them.
+     *
+     * In order: the file's own tag, then anything fetched before, then the network
+     * if that has been allowed. Nearest first is deliberate — the tag is what the
+     * person who made the file intended, and the cache is a guess from a previous
+     * lookup that may have matched a different recording of the same song.
+     */
     suspend fun getLyrics(
         trackKey: String,
         title: String,
@@ -41,30 +52,30 @@ class LyricsRepository(
     ): LyricsData? {
         val normalizedTitle = title.trim()
         val normalizedArtist = artist.trim()
-        if (normalizedTitle.isBlank() || normalizedArtist.isBlank()) {
-            return null
-        }
+        // A lookup needs something to look up by. Without both, every source below
+        // would either fail or match the wrong song.
+        if (normalizedTitle.isBlank() || normalizedArtist.isBlank()) return null
+
+        // The path is resolved here rather than passed in: the caller holds a content
+        // URI, and turning that into a path is the library's job, not the player UI's.
+        val embedded = embeddedLyrics.read(dao.filePathFor(trackKey))
+        if (embedded != null) return embedded
 
         val cacheKey = buildCacheKey(trackKey, normalizedTitle, normalizedArtist)
-
-        loadFromCache(cacheKey)?.let {
-            return it.copy(cached = true)
-        }
+        val cached = loadFromCache(cacheKey)
+        if (cached != null) return cached.copy(cached = true)
 
         // Nothing leaves the device unless the listener has asked for it. The cache
         // above is still consulted, because a lyric already fetched is already here
         // and re-reading it tells no one anything.
         if (!allowOnlineLookup) return null
 
-        val fetched = fetchFromLrcLib(
+        return fetchFromLrcLib(
             title = normalizedTitle,
             artist = normalizedArtist,
             album = album.trim(),
-            durationSeconds = (durationMs / 1000L).toInt().coerceAtLeast(0)
-        ) ?: return null
-
-        saveToCache(cacheKey, fetched)
-        return fetched
+            durationSeconds = (durationMs / 1000L).toInt().coerceAtLeast(0),
+        )?.also { saveToCache(cacheKey, it) }
     }
 
     private fun buildCacheKey(trackKey: String, title: String, artist: String): String {
@@ -202,32 +213,8 @@ class LyricsRepository(
         )
     }
 
-    private fun parseLrc(raw: String): List<SyncedLyricLine> {
-        if (raw.isBlank()) return emptyList()
-        val lines = mutableListOf<SyncedLyricLine>()
-        val regex = Regex("\\[(\\d{1,2}):(\\d{2})(?:\\.(\\d{1,3}))?]([^\\n\\r]*)")
-
-        raw.lineSequence().forEach { row ->
-            regex.findAll(row).forEach { match ->
-                val min = match.groupValues.getOrNull(1)?.toLongOrNull() ?: 0L
-                val sec = match.groupValues.getOrNull(2)?.toLongOrNull() ?: 0L
-                val fracRaw = match.groupValues.getOrNull(3).orEmpty()
-                val fracMs = when (fracRaw.length) {
-                    1 -> fracRaw.toLongOrNull()?.times(100L) ?: 0L
-                    2 -> fracRaw.toLongOrNull()?.times(10L) ?: 0L
-                    3 -> fracRaw.toLongOrNull() ?: 0L
-                    else -> 0L
-                }
-                val text = (match.groupValues.getOrNull(4).orEmpty()).trim()
-                val timeMs = (min * 60_000L) + (sec * 1_000L) + fracMs
-                if (text.isNotBlank()) {
-                    lines += SyncedLyricLine(timeMs = timeMs, text = text)
-                }
-            }
-        }
-
-        return lines.sortedBy { it.timeMs }
-    }
+    /** Delegated, so embedded and online lyrics agree on what a timestamp means. */
+    private fun parseLrc(raw: String): List<SyncedLyricLine> = LrcParser.parse(raw)
 
     private fun request(url: String): String? {
         return runCatching {
