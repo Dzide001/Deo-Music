@@ -22,6 +22,9 @@ dependencies {
     implementation(libs.hilt.work)
     ksp(libs.hilt.compiler.androidx)
 
+    // The real org.json on the unit-test classpath. android.jar ships stubs that
+    // throw "not mocked", so anything parsing JSON is otherwise untestable off-device.
+    testImplementation(libs.org.json)
     testImplementation(libs.junit)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.room.testing)

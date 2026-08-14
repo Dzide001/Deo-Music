@@ -1,4 +1,5 @@
 [versions]
+orgJson = "20250107"
 # Build toolchain — verified against Google Maven / Maven Central on 2026-08-08.
 # AGP 9.x is required: current AndroidX (core-ktx 1.19, lifecycle 2.11) refuses
 # to build on AGP 8.x and needs compileSdk 37.
@@ -46,6 +47,8 @@ robolectric = "4.16.1"
 leakcanary = "2.14"
 
 [libraries]
+# Real org.json for unit tests; android.jar ships stubs that throw "not mocked".
+org-json = { module = "org.json:json", version.ref = "orgJson" }
 # --- Media (Apache 2.0) ---
 media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3" }
 media3-session = { module = "androidx.media3:media3-session", version.ref = "media3" }
