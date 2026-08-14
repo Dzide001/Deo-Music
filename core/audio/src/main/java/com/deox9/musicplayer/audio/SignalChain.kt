@@ -21,6 +21,10 @@ data class SignalChain(
     val decoderName: String? = null,
     val stages: List<DspStage> = emptyList(),
     val output: StreamFormat? = null,
+    /** Where the audio is going, as a listener would name it. */
+    val outputRoute: String? = null,
+    /** Whether a saved per-output profile is shaping the sound rather than the global settings. */
+    val usingOutputProfile: Boolean = false,
 )
 
 /**

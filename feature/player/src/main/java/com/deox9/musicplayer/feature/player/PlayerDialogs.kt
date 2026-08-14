@@ -49,6 +49,8 @@ import com.deox9.musicplayer.audio.CrossfadeCurve
 import com.deox9.musicplayer.audio.CrossfadeSettings
 import com.deox9.musicplayer.audio.EqBand
 import com.deox9.musicplayer.audio.EqBandType
+import com.deox9.musicplayer.audio.OutputProfiles
+import com.deox9.musicplayer.audio.OutputRoute
 import com.deox9.musicplayer.library.PlaylistInfo
 import com.deox9.musicplayer.lyrics.LyricsData
 import com.deox9.musicplayer.player.PlaybackState
@@ -523,6 +525,7 @@ internal fun SettingSwitch(label: String, checked: Boolean, onChange: (Boolean) 
 @Composable
 private fun EqualizerDialog(onDismiss: () -> Unit, viewModel: PlayerViewModel) {
     val settings by viewModel.settings.collectAsState()
+    val route by viewModel.outputRoute.collectAsState()
     val bands = settings.eqBands
 
     AlertDialog(
@@ -539,6 +542,14 @@ private fun EqualizerDialog(onDismiss: () -> Unit, viewModel: PlayerViewModel) {
                 // The curve first, because it is the only thing that shows what the
                 // bands add up to.
                 EqCurve(bands = bands, sampleRate = CURVE_SAMPLE_RATE)
+
+                OutputProfileControls(
+                    route = route,
+                    profiles = settings.outputProfiles,
+                    bands = bands,
+                    viewModel = viewModel,
+                )
+                HorizontalDivider()
 
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     EqPreset.entries.forEach { preset ->
@@ -740,3 +751,62 @@ private val CrossfadeCurve.explanation: String
         CrossfadeCurve.EqualPower -> "Holds a steady loudness through the change."
         CrossfadeCurve.Logarithmic -> "Falls steadily to the ear. Suits longer fades."
     }
+
+/**
+ * Per-output profile controls, inside the equaliser because that is what they save.
+ *
+ * The route is named even when the feature is off, since "which output is this
+ * curve for" is the question the whole feature answers and the answer is useful
+ * before anyone commits to using it.
+ */
+@Composable
+private fun OutputProfileControls(
+    route: OutputRoute,
+    profiles: OutputProfiles,
+    bands: List<EqBand>,
+    viewModel: PlayerViewModel,
+) {
+    val saved = profiles.has(route)
+
+    Text(
+        text = "Playing through ${route.label}",
+        style = MaterialTheme.typography.labelMedium,
+    )
+
+    SettingSwitch(
+        label = "Per-output profiles",
+        checked = profiles.enabled,
+        onChange = viewModel::setOutputProfilesEnabled,
+    )
+
+    if (!profiles.enabled) {
+        Text(
+            text = "Save a different equaliser for each pair of headphones, speaker " +
+                "or DAC, and have it load itself when you plug in.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        return
+    }
+
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        TextButton(onClick = { viewModel.saveProfileForCurrentRoute(bands) }) {
+            Text(if (saved) "Update this output" else "Save for this output")
+        }
+        if (saved) {
+            TextButton(onClick = viewModel::deleteProfileForCurrentRoute) { Text("Forget") }
+        }
+    }
+
+    Text(
+        // Which curve is actually being heard is not obvious once profiles exist,
+        // and guessing wrong means tuning against a correction you cannot see.
+        text = if (saved) {
+            "${route.label} has its own profile. It is what you are hearing."
+        } else {
+            "${route.label} has no profile yet, so the settings above apply."
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}

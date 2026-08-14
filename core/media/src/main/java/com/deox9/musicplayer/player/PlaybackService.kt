@@ -24,13 +24,15 @@ import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import com.deox9.musicplayer.audio.AudioChainConfig
 import com.deox9.musicplayer.audio.CrossfadeSettings
 import com.deox9.musicplayer.audio.EqBand
 import com.deox9.musicplayer.audio.FadeDirection
+import com.deox9.musicplayer.audio.OutputProfiles
+import com.deox9.musicplayer.audio.OutputRoute
 import com.deox9.musicplayer.audio.ReplayGain
 import com.deox9.musicplayer.audio.StreamFormat
 import com.deox9.musicplayer.audio.codecLabelFor
+import com.deox9.musicplayer.audio.resolveChainConfig
 import com.deox9.musicplayer.database.dao.LibraryDao
 import com.deox9.musicplayer.library.AlbumArt
 import com.deox9.musicplayer.library.RecommendationSignalsRepository
@@ -76,6 +78,9 @@ class PlaybackService : MediaSessionService() {
     /** Shared with the UI, which shows what the audio path is actually doing. */
     @Inject
     lateinit var signalChainReporter: SignalChainReporter
+
+    @Inject
+    lateinit var outputRouteMonitor: OutputRouteMonitor
     private var mediaSession: MediaSession? = null
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -84,6 +89,7 @@ class PlaybackService : MediaSessionService() {
     private lateinit var recommendationSignalsRepository: RecommendationSignalsRepository
     private var positionPersistJob: Job? = null
     private var settingsJob: Job? = null
+    private var routeJob: Job? = null
     private var skipFadeJob: Job? = null
     private var endOfTrackFadeJob: Job? = null
     private var crossfade: CrossfadeSettings = CrossfadeSettings()
@@ -91,6 +97,8 @@ class PlaybackService : MediaSessionService() {
     private var replayGainDb: Float = 0f
     private var eqEnabled: Boolean = false
     private var eqBands: List<EqBand> = emptyList()
+    private var outputProfiles: OutputProfiles = OutputProfiles()
+    private var outputRoute: OutputRoute = OutputRoute.Speaker
     private val audioProcessor = DeoAudioProcessor()
     private val chainProbe = ChainProbeAudioProcessor()
 
@@ -250,6 +258,17 @@ class PlaybackService : MediaSessionService() {
 
         restoreLastSession()
 
+        outputRouteMonitor.start()
+        routeJob = mainScope.launch {
+            outputRouteMonitor.route.collect { route ->
+                outputRoute = route
+                // Re-resolved rather than merely recorded: plugging headphones in is
+                // the moment their profile has to take effect, not the next time
+                // some other setting happens to change.
+                applyAudioChain()
+            }
+        }
+
         settingsJob = mainScope.launch {
             appSettingsRepository.observe().collect { settings ->
                 crossfade = settings.crossfade
@@ -257,6 +276,7 @@ class PlaybackService : MediaSessionService() {
                 replayGainDb = settings.replayGainDb
                 eqEnabled = settings.eqEnabled
                 eqBands = settings.eqBands
+                outputProfiles = settings.outputProfiles
                 applyAudioChain()
 
                 // There is no gapless setting to honour any more. Playback here is
@@ -660,15 +680,19 @@ class PlaybackService : MediaSessionService() {
     }
 
     private fun applyAudioChain() {
-        val config = AudioChainConfig(
+        val config = resolveChainConfig(
             gainDb = if (replayGainEnabled) effectiveGainDb() else 0.0,
-            bands = if (eqEnabled) eqBands else emptyList(),
-            // Always on. It costs a few milliseconds of latency and is the only
-            // thing standing between a boost and a clipped output.
-            limiterEnabled = true,
+            defaultBands = if (eqEnabled) eqBands else emptyList(),
+            // Always on by default. It costs a few milliseconds of latency and is
+            // the only thing standing between a boost and a clipped output; a
+            // profile may still turn it off for an output that does not need it.
+            defaultLimiterEnabled = true,
+            profiles = outputProfiles,
+            route = outputRoute,
         )
         audioProcessor.setConfig(config)
         signalChainReporter.setStages(config, audioProcessor.limiterReductionDb)
+        signalChainReporter.setRoute(outputRoute, outputProfiles.forRoute(outputRoute) != null)
     }
 
     /**
@@ -783,6 +807,8 @@ class PlaybackService : MediaSessionService() {
         stopPositionPersistence()
         cancelFades()
         settingsJob?.cancel()
+        routeJob?.cancel()
+        outputRouteMonitor.stop()
         mediaSession?.run {
             player.release()
             release()

@@ -273,6 +273,12 @@ internal fun SignalChainView(chain: SignalChain) {
         }
 
         ChainRow("Output", chain.output?.describe() ?: "—")
+        chain.outputRoute?.let { route ->
+            ChainRow(
+                "Route",
+                if (chain.usingOutputProfile) "$route · own profile" else route,
+            )
+        }
     }
 }
 

@@ -14,6 +14,8 @@ import com.deox9.musicplayer.audio.CrossfadeCurve
 import com.deox9.musicplayer.audio.CrossfadeSettings
 import com.deox9.musicplayer.audio.EqBand
 import com.deox9.musicplayer.audio.EqBandType
+import com.deox9.musicplayer.audio.OutputProfile
+import com.deox9.musicplayer.audio.OutputProfiles
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
@@ -68,7 +70,15 @@ data class AppSettings(
      * Off by default: it is the only way to get ReplayGain and reliable album
      * artist, but it is far slower than reading MediaStore.
      */
-    val thoroughScanEnabled: Boolean = false
+    val thoroughScanEnabled: Boolean = false,
+    /**
+     * Per-output equaliser settings.
+     *
+     * Off by default: with it on, the equaliser someone carefully set stops applying
+     * the moment they plug in headphones, which is astonishing rather than helpful
+     * until they have asked for it.
+     */
+    val outputProfiles: OutputProfiles = OutputProfiles(),
 )
 
 class AppSettingsRepository(private val context: Context) {
@@ -91,7 +101,11 @@ class AppSettingsRepository(private val context: Context) {
                     raw = prefs[Keys.EQ_BANDS_JSON],
                     legacyLevels = decodeEqBands(prefs[Keys.EQ_BAND_LEVELS_JSON] ?: "[]"),
                 ),
-                thoroughScanEnabled = prefs[Keys.THOROUGH_SCAN_ENABLED] ?: false
+                thoroughScanEnabled = prefs[Keys.THOROUGH_SCAN_ENABLED] ?: false,
+                outputProfiles = OutputProfiles(
+                    profiles = decodeOutputProfiles(prefs[Keys.OUTPUT_PROFILES_JSON]),
+                    enabled = prefs[Keys.OUTPUT_PROFILES_ENABLED] ?: false,
+                )
             )
         }
     }
@@ -221,7 +235,67 @@ class AppSettingsRepository(private val context: Context) {
             prefs[Keys.EQ_BAND_LEVELS_JSON] = encodeEqBands(List(10) { 0 })
             prefs[Keys.EQ_BANDS_JSON] = encodeParametricBands(emptyList())
             prefs[Keys.THOROUGH_SCAN_ENABLED] = false
+            prefs[Keys.OUTPUT_PROFILES_ENABLED] = false
+            prefs[Keys.OUTPUT_PROFILES_JSON] = encodeOutputProfiles(emptyMap())
         }
+    }
+
+    suspend fun setOutputProfilesEnabled(enabled: Boolean) {
+        context.appSettingsDataStore.edit { prefs ->
+            prefs[Keys.OUTPUT_PROFILES_ENABLED] = enabled
+        }
+    }
+
+    suspend fun saveOutputProfile(profile: OutputProfile) {
+        editOutputProfiles { it.with(profile) }
+    }
+
+    suspend fun deleteOutputProfile(routeKey: String) {
+        editOutputProfiles { it.without(routeKey) }
+    }
+
+    /**
+     * Reads, changes and writes the profiles in one edit.
+     *
+     * DataStore's edit block is the transaction, so doing this as a read followed by
+     * a separate write would let two saves from different routes race and lose one.
+     */
+    private suspend fun editOutputProfiles(change: (OutputProfiles) -> OutputProfiles) {
+        context.appSettingsDataStore.edit { prefs ->
+            val current = OutputProfiles(profiles = decodeOutputProfiles(prefs[Keys.OUTPUT_PROFILES_JSON]))
+            prefs[Keys.OUTPUT_PROFILES_JSON] = encodeOutputProfiles(change(current).profiles)
+        }
+    }
+
+    private fun decodeOutputProfiles(raw: String?): Map<String, OutputProfile> {
+        if (raw.isNullOrBlank()) return emptyMap()
+        return try {
+            val array = JSONArray(raw)
+            (0 until array.length()).mapNotNull { index ->
+                val item = array.optJSONObject(index) ?: return@mapNotNull null
+                val key = item.optString("routeKey").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                key to OutputProfile(
+                    routeKey = key,
+                    bands = decodeBandArray(item.optJSONArray("bands")),
+                    limiterEnabled = item.optBoolean("limiterEnabled", true),
+                )
+            }.toMap()
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    private fun encodeOutputProfiles(profiles: Map<String, OutputProfile>): String {
+        val array = JSONArray()
+        profiles.values.forEach { profile ->
+            array.put(
+                JSONObject()
+                    .put("routeKey", profile.routeKey)
+                    .put("bands", JSONArray(encodeParametricBands(profile.bands)))
+                    .put("limiterEnabled", profile.limiterEnabled),
+            )
+        }
+        return array.toString()
     }
 
     suspend fun setEqBands(bands: List<EqBand>) {
@@ -242,21 +316,32 @@ class AppSettingsRepository(private val context: Context) {
         if (raw == null) return EqBand.fromGraphicLevels(legacyLevels).filterNot { it.isTransparent }
 
         return try {
-            val array = JSONArray(raw)
-            (0 until array.length()).mapNotNull { index ->
-                val item = array.optJSONObject(index) ?: return@mapNotNull null
-                EqBand(
-                    type = runCatching { EqBandType.valueOf(item.getString("type")) }
-                        .getOrDefault(EqBandType.Peaking),
-                    frequencyHz = item.optDouble("frequencyHz", 1000.0)
-                        .coerceIn(MIN_BAND_HZ, MAX_BAND_HZ),
-                    gainDb = item.optDouble("gainDb", 0.0).coerceIn(MIN_BAND_DB, MAX_BAND_DB),
-                    q = item.optDouble("q", EqBand.DEFAULT_Q).coerceIn(MIN_BAND_Q, MAX_BAND_Q),
-                    enabled = item.optBoolean("enabled", true),
-                )
-            }
+            decodeBandArray(JSONArray(raw))
         } catch (_: Exception) {
             emptyList()
+        }
+    }
+
+    /**
+     * Bands out of a JSON array, clamped to the ranges the editor offers.
+     *
+     * Shared by the global equaliser and the per-output profiles so a band saved by
+     * one is read the same way by the other; two copies would drift the moment a
+     * field was added.
+     */
+    private fun decodeBandArray(array: JSONArray?): List<EqBand> {
+        if (array == null) return emptyList()
+        return (0 until array.length()).mapNotNull { index ->
+            val item = array.optJSONObject(index) ?: return@mapNotNull null
+            EqBand(
+                type = runCatching { EqBandType.valueOf(item.getString("type")) }
+                    .getOrDefault(EqBandType.Peaking),
+                frequencyHz = item.optDouble("frequencyHz", 1000.0)
+                    .coerceIn(MIN_BAND_HZ, MAX_BAND_HZ),
+                gainDb = item.optDouble("gainDb", 0.0).coerceIn(MIN_BAND_DB, MAX_BAND_DB),
+                q = item.optDouble("q", EqBand.DEFAULT_Q).coerceIn(MIN_BAND_Q, MAX_BAND_Q),
+                enabled = item.optBoolean("enabled", true),
+            )
         }
     }
 
@@ -323,6 +408,8 @@ class AppSettingsRepository(private val context: Context) {
         val EQ_BAND_LEVELS_JSON = stringPreferencesKey("eq_band_levels_json")
         val EQ_BANDS_JSON = stringPreferencesKey("eq_bands_json")
         val THOROUGH_SCAN_ENABLED = booleanPreferencesKey("thorough_scan_enabled")
+        val OUTPUT_PROFILES_ENABLED = booleanPreferencesKey("output_profiles_enabled")
+        val OUTPUT_PROFILES_JSON = stringPreferencesKey("output_profiles_json")
     }
 
     companion object {

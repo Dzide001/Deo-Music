@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.deox9.musicplayer.audio.CrossfadeCurve
 import com.deox9.musicplayer.audio.EqBand
+import com.deox9.musicplayer.audio.OutputProfile
 import com.deox9.musicplayer.audio.SignalChain
 import com.deox9.musicplayer.library.FavouritesRepository
 import com.deox9.musicplayer.library.LocalMusicRepository
@@ -12,6 +13,7 @@ import com.deox9.musicplayer.library.PlaylistInfo
 import com.deox9.musicplayer.library.RoomLibraryRepository
 import com.deox9.musicplayer.lyrics.LyricsData
 import com.deox9.musicplayer.lyrics.LyricsRepository
+import com.deox9.musicplayer.player.OutputRouteMonitor
 import com.deox9.musicplayer.player.PlaybackConnection
 import com.deox9.musicplayer.player.PlaybackState
 import com.deox9.musicplayer.player.SignalChainReporter
@@ -43,12 +45,30 @@ class PlayerViewModel @Inject constructor(
     private val lyricsRepository: LyricsRepository,
     private val settingsRepository: AppSettingsRepository,
     signalChainReporter: SignalChainReporter,
+    private val outputRouteMonitor: OutputRouteMonitor,
 ) : ViewModel() {
 
     val state: StateFlow<PlaybackState> = playback.state
 
     /** What the audio path is doing, for the signal-chain readout. */
     val signalChain: StateFlow<SignalChain> = signalChainReporter.chain
+
+    /** Where audio is going, so the equaliser can say what it is editing. */
+    val outputRoute = outputRouteMonitor.route
+
+    fun setOutputProfilesEnabled(enabled: Boolean) =
+        edit { settingsRepository.setOutputProfilesEnabled(enabled) }
+
+    /** Saves whatever the equaliser is currently showing as this output's profile. */
+    fun saveProfileForCurrentRoute(bands: List<EqBand>) = edit {
+        settingsRepository.saveOutputProfile(
+            OutputProfile(routeKey = outputRouteMonitor.route.value.key, bands = bands),
+        )
+    }
+
+    fun deleteProfileForCurrentRoute() = edit {
+        settingsRepository.deleteOutputProfile(outputRouteMonitor.route.value.key)
+    }
 
     val favourites: StateFlow<Set<String>> = favouritesRepository.observe()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptySet())

@@ -3,6 +3,7 @@ package com.deox9.musicplayer.player
 
 import com.deox9.musicplayer.audio.AudioChainConfig
 import com.deox9.musicplayer.audio.DspStage
+import com.deox9.musicplayer.audio.OutputRoute
 import com.deox9.musicplayer.audio.SignalChain
 import com.deox9.musicplayer.audio.SignalChainStages
 import com.deox9.musicplayer.audio.StreamFormat
@@ -36,6 +37,17 @@ class SignalChainReporter @Inject constructor() {
     fun setDecoder(name: String?) = _chain.update { it.copy(decoderName = name) }
 
     fun setOutput(format: StreamFormat?) = _chain.update { it.copy(output = format) }
+
+    /**
+     * Records where the audio is going and whether a saved profile is shaping it.
+     *
+     * On the readout because the equaliser curve on screen is no longer necessarily
+     * the one being applied once profiles are on — without this there is nothing to
+     * tell a listener which of the two they are hearing.
+     */
+    fun setRoute(route: OutputRoute, usingProfile: Boolean) = _chain.update {
+        it.copy(outputRoute = route.label, usingOutputProfile = usingProfile)
+    }
 
     fun setStages(config: AudioChainConfig, limiterReductionDb: Double) =
         _chain.update { it.copy(stages = SignalChainStages.from(config, limiterReductionDb)) }
