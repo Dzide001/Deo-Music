@@ -37,6 +37,13 @@ class EmbeddedLyrics @Inject constructor() {
         if (!file.isFile || !file.canRead()) return@withContext null
 
         // A corrupt header or an unsupported container costs this one lookup.
+        //
+        // Reads the standard USLT frame, via FieldKey.LYRICS. Note for anyone
+        // extending this: a file tagged by ffmpeg's `-metadata lyrics=` is reported
+        // by eAlvaTag as carrying TXXX and no USLT, so its lyrics are not found
+        // here. Whether that is worth a fallback is unsettled — the raw bytes of
+        // such a file contain both frame names, so the observation needs pinning
+        // down before code is written against it.
         val raw = runCatching {
             AudioFileIO.read(file).tag.orNull()?.getValue(FieldKey.LYRICS)?.orNull()
         }.getOrNull()
