@@ -37,6 +37,7 @@ import com.deox9.musicplayer.audio.codecLabelFor
 import com.deox9.musicplayer.audio.resolveChainConfig
 import com.deox9.musicplayer.database.dao.LibraryDao
 import com.deox9.musicplayer.library.AlbumArt
+import com.deox9.musicplayer.library.EmbeddedArtwork
 import com.deox9.musicplayer.library.RecommendationSignalsRepository
 import com.deox9.musicplayer.player.storage.PlaybackSessionEntity
 import com.deox9.musicplayer.player.storage.PlaybackSessionRepository
@@ -87,6 +88,9 @@ class PlaybackService : MediaSessionService() {
 
     @Inject
     lateinit var sleepTimer: SleepTimer
+
+    @Inject
+    lateinit var embeddedArtwork: EmbeddedArtwork
     private var mediaSession: MediaSession? = null
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -509,9 +513,10 @@ class PlaybackService : MediaSessionService() {
         val shuffleEnabled = player.shuffleModeEnabled
         val repeatMode = player.repeatMode
         val playerVolume = player.volume
-        val albumArtUri = queryAlbumArtUri(uri)
-
         ioScope.launch {
+            // Resolved here rather than on the caller's thread: the fallback reads
+            // the audio file, and this runs on every position tick.
+            val albumArtUri = artworkUriFor(uri, libraryDao.filePathFor(uri))
             playbackSessionRepository.save(
                 PlaybackSessionEntity(
                     uri = uri,
@@ -540,6 +545,36 @@ class PlaybackService : MediaSessionService() {
      * queried directly for its ALBUM_ID rather than matched against the DATA column
      * (DATA holds a filesystem path and never equals a content URI).
      */
+    /**
+     * Artwork for a track, falling back to the file's own cover.
+     *
+     * MediaStore's albumart provider covers most of the library, but it is keyed by
+     * album — so a track with no album tag, or in a container MediaStore did not
+     * index art for, has none. Those are exactly the loose files people accumulate,
+     * and they are the ones that show a blank square.
+     *
+     * The fallback reads the audio file, which the app is already permitted to do.
+     * A folder.jpg beside the track would be the next step in the roadmap's chain
+     * and is deliberately not taken: it needs READ_MEDIA_IMAGES, which grants every
+     * photo on the phone to a music player.
+     */
+    private suspend fun artworkUriFor(trackUri: String, filePath: String?): String {
+        val fromMediaStore = queryAlbumArtUri(trackUri)
+        if (fromMediaStore.isNotBlank() && artworkExists(fromMediaStore)) return fromMediaStore
+        return embeddedArtwork.artworkUriFor(filePath).orEmpty()
+    }
+
+    /**
+     * Whether the albumart provider actually has something.
+     *
+     * It hands back a URI for any album id, including ones it holds no image for,
+     * so the URI existing is not the same as the art existing — opening it is the
+     * only way to find out, and doing so is what stops the fallback being dead code.
+     */
+    private fun artworkExists(uri: String): Boolean = runCatching {
+        contentResolver.openAssetFileDescriptor(Uri.parse(uri), "r")?.use { true } ?: false
+    }.getOrDefault(false)
+
     private fun queryAlbumArtUri(trackUri: String): String {
         val uri = runCatching { Uri.parse(trackUri) }.getOrNull() ?: return ""
         if (uri.scheme != ContentResolver.SCHEME_CONTENT) return ""

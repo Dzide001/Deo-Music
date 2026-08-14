@@ -425,6 +425,10 @@ interface LibraryDao {
     @Query("SELECT * FROM favourites")
     suspend fun allFavourites(): List<FavouriteEntity>
 
+    /** The track's own path, for reading tags or embedded art out of the file. */
+    @Query("SELECT filePath FROM tracks WHERE mediaUri = :mediaUri LIMIT 1")
+    suspend fun filePathFor(mediaUri: String): String?
+
     /**
      * Play counts, counting only what was actually heard.
      *
