@@ -36,7 +36,8 @@ class LyricsRepository(
         title: String,
         artist: String,
         album: String,
-        durationMs: Long
+        durationMs: Long,
+        allowOnlineLookup: Boolean,
     ): LyricsData? {
         val normalizedTitle = title.trim()
         val normalizedArtist = artist.trim()
@@ -49,6 +50,11 @@ class LyricsRepository(
         loadFromCache(cacheKey)?.let {
             return it.copy(cached = true)
         }
+
+        // Nothing leaves the device unless the listener has asked for it. The cache
+        // above is still consulted, because a lyric already fetched is already here
+        // and re-reading it tells no one anything.
+        if (!allowOnlineLookup) return null
 
         val fetched = fetchFromLrcLib(
             title = normalizedTitle,

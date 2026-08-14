@@ -475,6 +475,24 @@ private fun AudioSettingsDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                SettingSwitch(
+                    label = "Look up lyrics online",
+                    checked = settings.onlineLyricsEnabled,
+                    onChange = viewModel::setOnlineLyricsEnabled,
+                )
+                Text(
+                    text = if (settings.onlineLyricsEnabled) {
+                        "Sends the track title, artist, album and length to lrclib.net " +
+                            "when you open lyrics."
+                    } else {
+                        "Off. Nothing about what you play leaves the device; only " +
+                            "lyrics already saved are shown."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                HorizontalDivider()
+
                 FadeSettings(settings.crossfade, viewModel)
                 HorizontalDivider()
                 SettingSwitch("Replay gain", settings.replayGainEnabled, viewModel::setReplayGainEnabled)

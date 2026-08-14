@@ -106,8 +106,18 @@ class PlayerViewModel @Inject constructor(
         album: String,
         durationMs: Long,
     ): LyricsData? = withContext(Dispatchers.IO) {
-        lyricsRepository.getLyrics(trackKey, title, artist, album, durationMs)
+        lyricsRepository.getLyrics(
+            trackKey = trackKey,
+            title = title,
+            artist = artist,
+            album = album,
+            durationMs = durationMs,
+            allowOnlineLookup = settings.value.onlineLyricsEnabled,
+        )
     }
+
+    fun setOnlineLyricsEnabled(enabled: Boolean) =
+        edit { settingsRepository.setOnlineLyricsEnabled(enabled) }
 
     fun setCrossfadeOnSkip(enabled: Boolean) = edit { settingsRepository.setCrossfadeOnSkip(enabled) }
 

@@ -79,6 +79,16 @@ data class AppSettings(
      * until they have asked for it.
      */
     val outputProfiles: OutputProfiles = OutputProfiles(),
+    /**
+     * Whether lyrics may be looked up online.
+     *
+     * Off by default, and that is the whole point. Fetching lyrics sends the track
+     * title, artist, album and duration to lrclib.net, which means a third party
+     * learns what is being played. That may well be a trade someone wants, but it is
+     * theirs to make rather than something the app does on their behalf the first
+     * time they open the lyrics panel.
+     */
+    val onlineLyricsEnabled: Boolean = false,
 )
 
 class AppSettingsRepository(private val context: Context) {
@@ -102,6 +112,7 @@ class AppSettingsRepository(private val context: Context) {
                     legacyLevels = decodeEqBands(prefs[Keys.EQ_BAND_LEVELS_JSON] ?: "[]"),
                 ),
                 thoroughScanEnabled = prefs[Keys.THOROUGH_SCAN_ENABLED] ?: false,
+                onlineLyricsEnabled = prefs[Keys.ONLINE_LYRICS_ENABLED] ?: false,
                 outputProfiles = OutputProfiles(
                     profiles = decodeOutputProfiles(prefs[Keys.OUTPUT_PROFILES_JSON]),
                     enabled = prefs[Keys.OUTPUT_PROFILES_ENABLED] ?: false,
@@ -235,8 +246,15 @@ class AppSettingsRepository(private val context: Context) {
             prefs[Keys.EQ_BAND_LEVELS_JSON] = encodeEqBands(List(10) { 0 })
             prefs[Keys.EQ_BANDS_JSON] = encodeParametricBands(emptyList())
             prefs[Keys.THOROUGH_SCAN_ENABLED] = false
+            prefs[Keys.ONLINE_LYRICS_ENABLED] = false
             prefs[Keys.OUTPUT_PROFILES_ENABLED] = false
             prefs[Keys.OUTPUT_PROFILES_JSON] = encodeOutputProfiles(emptyMap())
+        }
+    }
+
+    suspend fun setOnlineLyricsEnabled(enabled: Boolean) {
+        context.appSettingsDataStore.edit { prefs ->
+            prefs[Keys.ONLINE_LYRICS_ENABLED] = enabled
         }
     }
 
@@ -408,6 +426,7 @@ class AppSettingsRepository(private val context: Context) {
         val EQ_BAND_LEVELS_JSON = stringPreferencesKey("eq_band_levels_json")
         val EQ_BANDS_JSON = stringPreferencesKey("eq_bands_json")
         val THOROUGH_SCAN_ENABLED = booleanPreferencesKey("thorough_scan_enabled")
+        val ONLINE_LYRICS_ENABLED = booleanPreferencesKey("online_lyrics_enabled")
         val OUTPUT_PROFILES_ENABLED = booleanPreferencesKey("output_profiles_enabled")
         val OUTPUT_PROFILES_JSON = stringPreferencesKey("output_profiles_json")
     }
