@@ -71,6 +71,7 @@ import com.deox9.musicplayer.library.FolderInfo
 import com.deox9.musicplayer.library.GenreInfo
 import com.deox9.musicplayer.library.LocalTrack
 import com.deox9.musicplayer.library.PlaylistInfo
+import com.deox9.musicplayer.player.QueuedTrack
 import com.deox9.musicplayer.scanner.LibraryScanWorker
 import com.deox9.musicplayer.ui.AlbumSortOption
 import com.deox9.musicplayer.ui.CollectionSortOption
@@ -518,7 +519,7 @@ fun SuggestedScreen(
                             viewModel.toggleFavourite(rec.track.contentUri)
                         },
                         onClick = {
-                            playback.playNow(rec.track.contentUri, rec.track.title, rec.track.artist)
+                            playback.playFrom(recommendations.map { it.track.asQueued() }, recommendations.indexOf(rec))
                         },
                         onPlayNext = {
                             playback.playNext(rec.track.contentUri, rec.track.title, rec.track.artist)
@@ -622,7 +623,7 @@ fun FavouritesScreen(
                     viewModel.toggleFavourite(track.contentUri)
                 },
                 onClick = {
-                    playback.playNow(track.contentUri, track.title, track.artist)
+                    playback.playFrom(favTracks.map { it.asQueued() }, favTracks.indexOf(track))
                 },
                 onPlayNext = {
                     playback.playNext(track.contentUri, track.title, track.artist)
@@ -758,7 +759,7 @@ internal fun CollectionTrackListScreen(
                         viewModel.toggleFavourite(track.contentUri)
                     },
                     onClick = {
-                        playback.playNow(track.contentUri, track.title, track.artist)
+                        playback.playFrom(tracks.map { it.asQueued() }, tracks.indexOf(track))
                     },
                     onPlayNext = {
                         playback.playNext(track.contentUri, track.title, track.artist)
@@ -875,7 +876,7 @@ fun LibraryScreen(
                         viewModel.toggleFavourite(track.contentUri)
                     },
                     onClick = {
-                        playback.playNow(track.contentUri, track.title, track.artist)
+                        playback.playFrom(filteredTracks.map { it.asQueued() }, filteredTracks.indexOf(track))
                     },
                     onPlayNext = {
                         playback.playNext(track.contentUri, track.title, track.artist)
@@ -1353,7 +1354,7 @@ private fun AlbumDetailScreen(
                         viewModel.toggleFavourite(track.contentUri)
                     },
                     onClick = {
-                        playback.playNow(track.contentUri, track.title, track.artist)
+                        playback.playFrom(tracks.map { it.asQueued() }, tracks.indexOf(track))
                     },
                     onPlayNext = {
                         playback.playNext(track.contentUri, track.title, track.artist)
@@ -1452,7 +1453,7 @@ fun SearchScreen(
                         track = track,
                         isFavourite = track.contentUri in favourites,
                         onToggleFavourite = { viewModel.toggleFavourite(track.contentUri) },
-                        onClick = { playback.playNow(track.contentUri, track.title, track.artist) },
+                        onClick = { playback.playFrom(trackResults.map { it.asQueued() }, trackResults.indexOf(track)) },
                         onPlayNext = { playback.playNext(track.contentUri, track.title, track.artist) },
                         onAddToQueue = { playback.addToQueue(track.contentUri, track.title, track.artist) },
                     )
@@ -1493,3 +1494,6 @@ private fun SearchSectionHeader(title: String, count: Int) {
 }
 
 private const val SEARCH_DEBOUNCE_MS = 220L
+
+/** A library track as the minimum the queue needs. */
+private fun LocalTrack.asQueued() = QueuedTrack(uri = contentUri, title = title, artist = artist)

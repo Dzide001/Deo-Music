@@ -132,8 +132,35 @@ class PlaybackConnection @Inject constructor(
 
     // ---- Commands -------------------------------------------------------------
 
+    /**
+     * Plays one track and nothing else.
+     *
+     * Kept for the places where a single track genuinely is the whole intent — a
+     * search result opened on its own, a widget tap. For a row in a list, use
+     * [playFrom]: replacing the queue with one track is what made Next do nothing
+     * after tapping a song, because there was never anything to go next to.
+     */
     fun playNow(uri: String, title: String?, artist: String?) = withController {
         setMediaItem(buildMediaItem(uri, title, artist))
+        prepare()
+        play()
+    }
+
+    /**
+     * Plays [startIndex] of [tracks] and queues the rest.
+     *
+     * What tapping a song in a list has to do. The list the listener is looking at is
+     * the queue they mean — playing one track from the middle of an album and then
+     * stopping dead is not something anyone asks for.
+     */
+    fun playFrom(tracks: List<QueuedTrack>, startIndex: Int) = withController {
+        if (tracks.isEmpty()) return@withController
+        val index = startIndex.coerceIn(0, tracks.size - 1)
+        setMediaItems(
+            tracks.map { buildMediaItem(it.uri, it.title, it.artist) },
+            index,
+            0L,
+        )
         prepare()
         play()
     }
@@ -330,3 +357,6 @@ class PlaybackConnection @Inject constructor(
         const val POSITION_TICK_MS = 250L
     }
 }
+
+/** The minimum a queue entry needs, so callers need not depend on the library types. */
+data class QueuedTrack(val uri: String, val title: String?, val artist: String?)
