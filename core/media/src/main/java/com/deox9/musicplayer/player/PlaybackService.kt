@@ -15,6 +15,7 @@ import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DecoderReuseEvaluation
@@ -317,6 +318,12 @@ class PlaybackService : MediaSessionService() {
                 eqBands = settings.eqBands
                 outputProfiles = settings.outputProfiles
                 resumeAfterInterruption = settings.resumeAfterInterruption
+                // Set on the player rather than folded into the DSP: Sonic sits in
+                // the sink's own chain and time-stretches, so pitch stays put when
+                // speed changes instead of the two moving together as they would if
+                // this were done by resampling.
+                player.playbackParameters =
+                    PlaybackParameters(settings.playbackSpeed, settings.playbackPitch)
                 applyAudioChain()
 
                 // There is no gapless setting to honour any more. Playback here is

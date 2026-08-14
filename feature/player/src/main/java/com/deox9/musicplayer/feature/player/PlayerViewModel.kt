@@ -116,6 +116,15 @@ class PlayerViewModel @Inject constructor(
         )
     }
 
+    fun setPlaybackSpeed(speed: Float) = edit { settingsRepository.setPlaybackSpeed(speed) }
+
+    fun setPlaybackPitch(pitch: Float) = edit { settingsRepository.setPlaybackPitch(pitch) }
+
+    fun resetPlaybackRate() = edit {
+        settingsRepository.setPlaybackSpeed(1f)
+        settingsRepository.setPlaybackPitch(1f)
+    }
+
     fun setOnlineLyricsEnabled(enabled: Boolean) =
         edit { settingsRepository.setOnlineLyricsEnabled(enabled) }
 

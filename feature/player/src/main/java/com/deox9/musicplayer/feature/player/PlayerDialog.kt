@@ -18,4 +18,5 @@ internal enum class PlayerDialog {
     Equalizer,
     SignalChain,
     SleepTimer,
+    SpeedAndPitch,
 }

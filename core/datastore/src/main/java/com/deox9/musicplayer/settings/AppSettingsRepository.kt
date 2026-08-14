@@ -99,6 +99,17 @@ data class AppSettings(
      * call ended is startling rather than helpful.
      */
     val resumeAfterInterruption: Boolean = true,
+    /** Playback rate, 1.0 being unchanged. */
+    val playbackSpeed: Float = 1f,
+    /**
+     * Pitch, independent of speed.
+     *
+     * Separate from speed because the two are only linked if you resample. Sonic
+     * time-stretches instead, which is what makes it possible to slow a lecture down
+     * without everyone sounding drunk, or drop a song a tone to sing along without
+     * it running slow.
+     */
+    val playbackPitch: Float = 1f,
 )
 
 class AppSettingsRepository(private val context: Context) {
@@ -124,6 +135,8 @@ class AppSettingsRepository(private val context: Context) {
                 thoroughScanEnabled = prefs[Keys.THOROUGH_SCAN_ENABLED] ?: false,
                 onlineLyricsEnabled = prefs[Keys.ONLINE_LYRICS_ENABLED] ?: false,
                 resumeAfterInterruption = prefs[Keys.RESUME_AFTER_INTERRUPTION] ?: true,
+                playbackSpeed = prefs[Keys.PLAYBACK_SPEED] ?: 1f,
+                playbackPitch = prefs[Keys.PLAYBACK_PITCH] ?: 1f,
                 outputProfiles = OutputProfiles(
                     profiles = decodeOutputProfiles(prefs[Keys.OUTPUT_PROFILES_JSON]),
                     enabled = prefs[Keys.OUTPUT_PROFILES_ENABLED] ?: false,
@@ -308,8 +321,22 @@ class AppSettingsRepository(private val context: Context) {
             prefs[Keys.THOROUGH_SCAN_ENABLED] = false
             prefs[Keys.ONLINE_LYRICS_ENABLED] = false
             prefs[Keys.RESUME_AFTER_INTERRUPTION] = true
+            prefs[Keys.PLAYBACK_SPEED] = 1f
+            prefs[Keys.PLAYBACK_PITCH] = 1f
             prefs[Keys.OUTPUT_PROFILES_ENABLED] = false
             prefs[Keys.OUTPUT_PROFILES_JSON] = encodeOutputProfiles(emptyMap())
+        }
+    }
+
+    suspend fun setPlaybackSpeed(speed: Float) {
+        context.appSettingsDataStore.edit { prefs ->
+            prefs[Keys.PLAYBACK_SPEED] = speed.coerceIn(MIN_RATE, MAX_RATE)
+        }
+    }
+
+    suspend fun setPlaybackPitch(pitch: Float) {
+        context.appSettingsDataStore.edit { prefs ->
+            prefs[Keys.PLAYBACK_PITCH] = pitch.coerceIn(MIN_RATE, MAX_RATE)
         }
     }
 
@@ -495,11 +522,17 @@ class AppSettingsRepository(private val context: Context) {
         val THOROUGH_SCAN_ENABLED = booleanPreferencesKey("thorough_scan_enabled")
         val ONLINE_LYRICS_ENABLED = booleanPreferencesKey("online_lyrics_enabled")
         val RESUME_AFTER_INTERRUPTION = booleanPreferencesKey("resume_after_interruption")
+        val PLAYBACK_SPEED = floatPreferencesKey("playback_speed")
+        val PLAYBACK_PITCH = floatPreferencesKey("playback_pitch")
         val OUTPUT_PROFILES_ENABLED = booleanPreferencesKey("output_profiles_enabled")
         val OUTPUT_PROFILES_JSON = stringPreferencesKey("output_profiles_json")
     }
 
     companion object {
+        /** Below a quarter speed the time-stretcher smears; above four it chirps. */
+        const val MIN_RATE = 0.25f
+        const val MAX_RATE = 4.0f
+
         const val DEFAULT_WEB_HOME = DEFAULT_WEB_HOME_URL
 
         /** Ranges the editor offers and stored values are clamped to. */

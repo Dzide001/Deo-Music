@@ -58,11 +58,13 @@ import com.deox9.musicplayer.library.PlaylistInfo
 import com.deox9.musicplayer.lyrics.LyricsData
 import com.deox9.musicplayer.player.PlaybackState
 import com.deox9.musicplayer.player.SleepTimer
+import com.deox9.musicplayer.settings.AppSettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.URLEncoder
+import kotlin.math.ln
 
 @Composable
 internal fun PlayerDialogs(
@@ -104,6 +106,8 @@ internal fun PlayerDialogs(
         )
         PlayerDialog.Equalizer -> EqualizerDialog(onDismiss = onDismiss, viewModel = viewModel)
         PlayerDialog.SleepTimer -> SleepTimerDialog(onDismiss = onDismiss, viewModel = viewModel)
+
+        PlayerDialog.SpeedAndPitch -> SpeedPitchDialog(onDismiss = onDismiss, viewModel = viewModel)
 
         PlayerDialog.SignalChain -> SignalChainDialog(onDismiss = onDismiss, viewModel = viewModel)
     }
@@ -151,6 +155,13 @@ internal fun NowPlayingMenu(
             onClick = {
                 onDismiss()
                 onViewAlbum(session?.album.orEmpty().trim())
+            },
+        )
+        DropdownMenuItem(
+            text = { Text("Speed & pitch") },
+            onClick = {
+                onDismiss()
+                onRequestDialog(PlayerDialog.SpeedAndPitch)
             },
         )
         DropdownMenuItem(
@@ -933,3 +944,63 @@ private fun formatRemaining(remainingMs: Long): String {
         "%d:%02d".format(minutes, seconds)
     }
 }
+
+/**
+ * Speed and pitch, adjusted independently.
+ *
+ * Two sliders rather than one, because the two are only linked if you change the
+ * rate by resampling. Media3's Sonic processor time-stretches instead, so a lecture
+ * can be slowed down without everyone sounding drunk and a song can drop a tone to
+ * sing along to without running slow.
+ */
+@Composable
+private fun SpeedPitchDialog(onDismiss: () -> Unit, viewModel: PlayerViewModel) {
+    val settings by viewModel.settings.collectAsState()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Speed & pitch") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                RateSlider(
+                    label = "Speed",
+                    value = settings.playbackSpeed,
+                    // Semitones would be the wrong unit here: speed is a rate, and
+                    // "1.25x" is how everyone already thinks about it.
+                    display = "%.2fx".format(settings.playbackSpeed),
+                    onChange = viewModel::setPlaybackSpeed,
+                )
+                RateSlider(
+                    label = "Pitch",
+                    value = settings.playbackPitch,
+                    display = "%+.1f semitones".format(semitonesOf(settings.playbackPitch)),
+                    onChange = viewModel::setPlaybackPitch,
+                )
+                TextButton(onClick = viewModel::resetPlaybackRate) { Text("Reset both") }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+    )
+}
+
+@Composable
+private fun RateSlider(label: String, value: Float, display: String, onChange: (Float) -> Unit) {
+    Text("$label — $display", style = MaterialTheme.typography.bodyMedium)
+    Slider(
+        value = value,
+        onValueChange = onChange,
+        valueRange = AppSettingsRepository.MIN_RATE..AppSettingsRepository.MAX_RATE,
+        modifier = Modifier.semantics { contentDescription = "$label, $display" },
+    )
+}
+
+/**
+ * A pitch ratio as semitones, which is the unit musicians actually use.
+ *
+ * A ratio of 2.0 is an octave — twelve semitones — and the relationship is
+ * logarithmic, so doubling the number does not double the interval.
+ */
+private fun semitonesOf(ratio: Float): Double =
+    SEMITONES_PER_OCTAVE * ln(ratio.toDouble()) / ln(2.0)
+
+private const val SEMITONES_PER_OCTAVE = 12.0
