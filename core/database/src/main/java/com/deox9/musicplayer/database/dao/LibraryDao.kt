@@ -9,6 +9,7 @@ import androidx.room.Transaction
 import androidx.room.Upsert
 import com.deox9.musicplayer.database.entity.AlbumEntity
 import com.deox9.musicplayer.database.entity.ArtistEntity
+import com.deox9.musicplayer.database.entity.BookmarkEntity
 import com.deox9.musicplayer.database.entity.FavouriteEntity
 import com.deox9.musicplayer.database.entity.FolderEntity
 import com.deox9.musicplayer.database.entity.GenreEntity
@@ -434,6 +435,24 @@ interface LibraryDao {
      */
     @Query("DELETE FROM playlists WHERE id = :playlistId")
     suspend fun deletePlaylist(playlistId: Long)
+
+    // ---- bookmarks --------------------------------------------------------------
+
+    @Query("SELECT * FROM bookmarks WHERE trackId = :trackId ORDER BY positionMs ASC")
+    fun observeBookmarks(trackId: Long): Flow<List<BookmarkEntity>>
+
+    @Insert
+    suspend fun addBookmark(bookmark: BookmarkEntity): Long
+
+    @Query("DELETE FROM bookmarks WHERE id = :id")
+    suspend fun deleteBookmark(id: Long)
+
+    @Query("UPDATE bookmarks SET label = :label WHERE id = :id")
+    suspend fun renameBookmark(id: Long, label: String)
+
+    /** Every bookmark, for the backup. */
+    @Query("SELECT * FROM bookmarks")
+    suspend fun allBookmarks(): List<BookmarkEntity>
 
     /** The track's own path, for reading tags or embedded art out of the file. */
     @Query("SELECT filePath FROM tracks WHERE mediaUri = :mediaUri LIMIT 1")

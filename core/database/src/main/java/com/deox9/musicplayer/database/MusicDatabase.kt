@@ -6,6 +6,7 @@ import androidx.room.RoomDatabase
 import com.deox9.musicplayer.database.dao.LibraryDao
 import com.deox9.musicplayer.database.entity.AlbumEntity
 import com.deox9.musicplayer.database.entity.ArtistEntity
+import com.deox9.musicplayer.database.entity.BookmarkEntity
 import com.deox9.musicplayer.database.entity.DspProfileEntity
 import com.deox9.musicplayer.database.entity.FavouriteEntity
 import com.deox9.musicplayer.database.entity.FolderEntity
@@ -35,8 +36,9 @@ import com.deox9.musicplayer.database.entity.TrackFtsEntity
         PlayHistoryEntity::class,
         FavouriteEntity::class,
         DspProfileEntity::class,
+        BookmarkEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class MusicDatabase : RoomDatabase() {

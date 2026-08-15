@@ -20,4 +20,5 @@ internal enum class PlayerDialog {
     SleepTimer,
     SpeedAndPitch,
     AbLoop,
+    Bookmarks,
 }

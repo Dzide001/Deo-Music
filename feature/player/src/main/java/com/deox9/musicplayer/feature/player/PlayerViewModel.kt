@@ -8,6 +8,8 @@ import com.deox9.musicplayer.audio.EqBand
 import com.deox9.musicplayer.audio.OutputProfile
 import com.deox9.musicplayer.audio.ShuffleMode
 import com.deox9.musicplayer.audio.SignalChain
+import com.deox9.musicplayer.library.Bookmark
+import com.deox9.musicplayer.library.BookmarksRepository
 import com.deox9.musicplayer.library.FavouritesRepository
 import com.deox9.musicplayer.library.LocalMusicRepository
 import com.deox9.musicplayer.library.PlaylistInfo
@@ -31,7 +33,11 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -45,6 +51,7 @@ import javax.inject.Inject
  * could be tested without an Activity.
  */
 @HiltViewModel
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class PlayerViewModel @Inject constructor(
     val playback: PlaybackConnection,
     private val favouritesRepository: FavouritesRepository,
@@ -54,6 +61,7 @@ class PlayerViewModel @Inject constructor(
     private val settingsRepository: AppSettingsRepository,
     private val playerTools: PlayerTools,
     private val savedQueues: SavedQueuesRepository,
+    private val bookmarksRepository: BookmarksRepository,
 ) : ViewModel() {
 
     val state: StateFlow<PlaybackState> = playback.state
@@ -190,6 +198,37 @@ class PlayerViewModel @Inject constructor(
     fun renameQueue(id: String, name: String) = edit { savedQueues.update { it.rename(id, name) } }
 
     fun deleteQueue(id: String) = edit { savedQueues.update { it.remove(id) } }
+
+    /**
+     * Bookmarks for whatever is playing.
+     *
+     * Re-read when the track changes, and only then: a bookmark belongs to one
+     * recording and the list is meaningless against another.
+     */
+    val bookmarks: StateFlow<List<Bookmark>> = playback.state
+        .map { it.uri }
+        .distinctUntilChanged()
+        .flatMapLatest { uri ->
+            if (uri.isBlank()) {
+                flowOf(emptyList())
+            } else {
+                bookmarksRepository.prepare(uri)
+                bookmarksRepository.observe(uri)
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
+
+    /** Marks the spot playing right now. */
+    fun addBookmark(label: String = "") = edit {
+        val uri = playback.state.value.uri
+        if (uri.isNotBlank()) bookmarksRepository.add(uri, playback.currentPositionMs(), label)
+    }
+
+    fun jumpToBookmark(bookmark: Bookmark) = playback.seekTo(bookmark.positionMs)
+
+    fun deleteBookmark(id: Long) = edit { bookmarksRepository.remove(id) }
+
+    fun renameBookmark(id: Long, label: String) = edit { bookmarksRepository.rename(id, label) }
 
     fun cycleShuffleMode() = edit {
         val next = when (settings.value.shuffleMode) {

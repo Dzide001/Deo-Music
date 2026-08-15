@@ -6,12 +6,14 @@ import android.content.Intent
 import android.net.Uri
 import android.os.SystemClock
 import android.widget.Toast
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
@@ -30,6 +32,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -55,6 +58,7 @@ import com.deox9.musicplayer.audio.EqBand
 import com.deox9.musicplayer.audio.EqBandType
 import com.deox9.musicplayer.audio.OutputProfiles
 import com.deox9.musicplayer.audio.OutputRoute
+import com.deox9.musicplayer.library.Bookmark
 import com.deox9.musicplayer.library.PlaylistInfo
 import com.deox9.musicplayer.lyrics.LyricsData
 import com.deox9.musicplayer.player.PlaybackState
@@ -113,6 +117,8 @@ internal fun PlayerDialogs(
 
         PlayerDialog.AbLoop -> AbLoopDialog(onDismiss = onDismiss, viewModel = viewModel)
 
+        PlayerDialog.Bookmarks -> BookmarksDialog(onDismiss = onDismiss, viewModel = viewModel)
+
         PlayerDialog.SignalChain -> SignalChainDialog(onDismiss = onDismiss, viewModel = viewModel)
     }
 }
@@ -159,6 +165,13 @@ internal fun NowPlayingMenu(
             onClick = {
                 onDismiss()
                 onViewAlbum(session?.album.orEmpty().trim())
+            },
+        )
+        DropdownMenuItem(
+            text = { Text("Bookmarks") },
+            onClick = {
+                onDismiss()
+                onRequestDialog(PlayerDialog.Bookmarks)
             },
         )
         DropdownMenuItem(
@@ -1060,4 +1073,85 @@ private fun AbLoopDialog(onDismiss: () -> Unit, viewModel: PlayerViewModel) {
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
     )
+}
+
+/**
+ * Named points inside the current track.
+ *
+ * For a two-hour mix, a lecture, or the one verse someone keeps returning to.
+ * Distinct from A–B repeat, which is a section playing on a loop right now and dies
+ * with the track; a bookmark outlives the session.
+ */
+@Composable
+private fun BookmarksDialog(onDismiss: () -> Unit, viewModel: PlayerViewModel) {
+    val marks by viewModel.bookmarks.collectAsState()
+    var renaming by remember { mutableStateOf<Bookmark?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Bookmarks") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (marks.isEmpty()) {
+                    Text(
+                        "Nothing marked in this track yet.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                marks.forEach { mark ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClickLabel = "Jump to ${mark.label.ifBlank { formatDuration(mark.positionMs) }}") {
+                                viewModel.jumpToBookmark(mark)
+                                onDismiss()
+                            }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            // An unnamed bookmark shows its timestamp, which is the
+                            // only thing that distinguishes it from the next one.
+                            Text(
+                                text = mark.label.ifBlank { formatDuration(mark.positionMs) },
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            if (mark.label.isNotBlank()) {
+                                Text(
+                                    text = formatDuration(mark.positionMs),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        TextButton(onClick = { renaming = mark }) { Text("Name") }
+                        TextButton(onClick = { viewModel.deleteBookmark(mark.id) }) { Text("Delete") }
+                    }
+                }
+                Button(onClick = { viewModel.addBookmark() }) { Text("Mark this spot") }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
+
+    renaming?.let { mark ->
+        var name by remember(mark.id) { mutableStateOf(mark.label) }
+        AlertDialog(
+            onDismissRequest = { renaming = null },
+            title = { Text("Name this spot") },
+            text = {
+                TextField(value = name, onValueChange = { name = it }, singleLine = true)
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.renameBookmark(mark.id, name)
+                        renaming = null
+                    },
+                ) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
+        )
+    }
 }

@@ -202,6 +202,29 @@ data class PlayHistoryEntity(
     val completed: Boolean,
 )
 
+/**
+ * A named point inside a track.
+ *
+ * For a two-hour DJ set, a lecture, or the one verse someone keeps coming back to.
+ * Distinct from the A–B loop, which is a section being repeated right now and dies
+ * with the track; a bookmark is meant to outlive the session.
+ */
+@Entity(
+    tableName = "bookmarks",
+    foreignKeys = [
+        ForeignKey(TrackEntity::class, ["id"], ["trackId"], onDelete = ForeignKey.CASCADE),
+    ],
+    indices = [Index("trackId")],
+)
+data class BookmarkEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val trackId: Long,
+    val positionMs: Long,
+    /** Blank means unnamed; the UI shows the timestamp instead. */
+    val label: String = "",
+    val createdAtMs: Long = 0,
+)
+
 @Entity(
     tableName = "favourites",
     foreignKeys = [

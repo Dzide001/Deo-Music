@@ -23,7 +23,7 @@ object DatabaseModule {
     fun provideMusicDatabase(
         @ApplicationContext context: Context,
     ): MusicDatabase = Room.databaseBuilder(context, MusicDatabase::class.java, MusicDatabase.NAME)
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
         // No fallbackToDestructiveMigration: a music library is expensive to rebuild
         // and silently wiping it on a schema change is not an acceptable default.
         // Favourites and play history live in here too and are not re-derivable.
@@ -46,6 +46,35 @@ object DatabaseModule {
      * Adds playlists.mediaStorePlaylistId, so importing MediaStore playlists can
      * resolve an existing row on re-scan instead of inserting a duplicate.
      */
+    /**
+     * Adds bookmarks.
+     *
+     * A new table only, so nothing existing is rewritten and the migration cannot
+     * lose anyone's library. The foreign key matches the entity exactly — Room
+     * compares the schema it finds against the one it expects and fails the app at
+     * startup over a difference as small as a missing ON DELETE clause.
+     */
+    val MIGRATION_3_4 = object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `bookmarks` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `trackId` INTEGER NOT NULL,
+                    `positionMs` INTEGER NOT NULL,
+                    `label` TEXT NOT NULL,
+                    `createdAtMs` INTEGER NOT NULL,
+                    FOREIGN KEY(`trackId`) REFERENCES `tracks`(`id`)
+                        ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_bookmarks_trackId` ON `bookmarks` (`trackId`)",
+            )
+        }
+    }
+
     val MIGRATION_2_3 = object : Migration(2, 3) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("ALTER TABLE playlists ADD COLUMN mediaStorePlaylistId INTEGER DEFAULT NULL")
