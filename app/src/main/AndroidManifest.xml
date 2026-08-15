@@ -49,6 +49,23 @@
                 tools:node="remove" />
         </provider>
 
-    </application>
+    
+        <!--
+          Quick settings tile. BIND_QUICK_SETTINGS_TILE is held by the system, not
+          requested from the user: it is how the panel is allowed to bind this, and
+          the tile still has to be added by hand before it appears.
+        -->
+        <service
+            android:name=".tile.PlaybackTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_play"
+            android:label="Play/Pause"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+</application>
 
 </manifest>
