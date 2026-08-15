@@ -18,6 +18,7 @@ import com.deox9.musicplayer.player.AbLoop
 import com.deox9.musicplayer.player.OutputRouteMonitor
 import com.deox9.musicplayer.player.PlaybackConnection
 import com.deox9.musicplayer.player.PlaybackState
+import com.deox9.musicplayer.player.QueuedTrack
 import com.deox9.musicplayer.player.SavedQueue
 import com.deox9.musicplayer.player.SavedQueueTrack
 import com.deox9.musicplayer.player.SavedQueues
@@ -180,7 +181,7 @@ class PlayerViewModel @Inject constructor(
         val target = savedQueues.current().queues.firstOrNull { it.id == id } ?: return@edit
         savedQueues.update { it.activate(id) }
         playback.playQueue(
-            uris = target.tracks.map { it.uri },
+            tracks = target.tracks.map { QueuedTrack(it.uri, it.title, it.artist) },
             startIndex = target.safeIndex,
             positionMs = target.positionMs,
         )

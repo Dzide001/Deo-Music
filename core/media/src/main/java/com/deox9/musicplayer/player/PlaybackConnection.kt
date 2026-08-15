@@ -147,11 +147,15 @@ class PlaybackConnection @Inject constructor(
      * whole point of switching back to a queue is landing where you were, not at the
      * top of the track you were halfway through.
      */
-    fun playQueue(uris: List<String>, startIndex: Int, positionMs: Long) = withController {
-        if (uris.isEmpty()) return@withController
-        val index = startIndex.coerceIn(0, uris.size - 1)
+    fun playQueue(tracks: List<QueuedTrack>, startIndex: Int, positionMs: Long) = withController {
+        if (tracks.isEmpty()) return@withController
+        val index = startIndex.coerceIn(0, tracks.size - 1)
         setMediaItems(
-            uris.map { buildMediaItem(it, null, null) },
+            // With their titles. Restoring URIs alone left every row of a switched-to
+            // queue reading "Unknown title" until each track happened to play and
+            // its metadata was read again — the saved queue holds the names, so
+            // there is no reason to throw them away.
+            tracks.map { buildMediaItem(it.uri, it.title, it.artist) },
             index,
             positionMs.coerceAtLeast(0L),
         )
