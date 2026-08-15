@@ -19,6 +19,10 @@ dependencies {
     implementation(libs.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
 
+    // Robolectric, because SavedQueuesRepository writes real DataStore files and
+    // encodes with org.json — android.jar's stub throws "not mocked" off-device.
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
