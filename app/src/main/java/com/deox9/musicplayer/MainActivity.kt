@@ -32,7 +32,6 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyListState
@@ -114,6 +113,7 @@ import com.deox9.musicplayer.ui.AlbumSortOption
 import com.deox9.musicplayer.ui.CollectionSortOption
 import com.deox9.musicplayer.ui.LibraryTab
 import com.deox9.musicplayer.ui.NavigationStyle
+import com.deox9.musicplayer.ui.QueueExpansion
 import com.deox9.musicplayer.ui.SongSortOption
 import com.deox9.musicplayer.ui.isDebugBuild
 import com.deox9.musicplayer.ui.label
@@ -243,10 +243,10 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
     var collectionSortOption by rememberSaveable { mutableStateOf(CollectionSortOption.Name) }
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
     var showQueueSheet by rememberSaveable { mutableStateOf(false) }
-    var prevQueueSize by rememberSaveable { mutableStateOf(0) }
-    var prevQueueSignature by rememberSaveable { mutableStateOf("") }
-    var suppressAutoExpand by rememberSaveable { mutableStateOf(false) }
-    var didInitQueueSnapshot by rememberSaveable { mutableStateOf(false) }
+    // Not rememberSaveable: the tracker's whole job is telling a queue the listener
+    // just chose from one restored on launch, and restoring its state across process
+    // death would make every cold start look like a deliberate change.
+    val queueExpansion = remember { QueueExpansion() }
     var showPerfOverlay by rememberSaveable { mutableStateOf(false) }
     var webPlaybackView by remember { mutableStateOf<WebView?>(null) }
     var lastPausedWebForLocalUri by rememberSaveable { mutableStateOf("") }
@@ -323,52 +323,11 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
         }
     }
 
-    // Auto-expand Now Playing when queue is replaced (not appended)
+    // Opens the player when the queue is replaced, not when it is added to. The
+    // rule itself lives in QueueExpansion, where it is tested.
     LaunchedEffect(session?.updatedAtMs) {
-        session?.let { currentSession ->
-            if (currentSession.queue.isEmpty()) {
-                prevQueueSize = 0
-                prevQueueSignature = ""
-                suppressAutoExpand = false
-                didInitQueueSnapshot = false
-                return@let
-            }
-
-            val currentQueueUris = currentSession.queue.map { it.uri }
-            val currentSignature = currentQueueUris.joinToString("|")
-
-            if (!didInitQueueSnapshot) {
-                prevQueueSize = currentSession.queue.size
-                prevQueueSignature = currentSignature
-                didInitQueueSnapshot = true
-                return@let
-            }
-
-            if (suppressAutoExpand) {
-                prevQueueSize = currentSession.queue.size
-                prevQueueSignature = currentSignature
-                return@let
-            }
-
-            if (currentSession.queue.isNotEmpty()) {
-                val currentQueueSize = currentSession.queue.size
-                val isAppend =
-                    prevQueueSignature.isNotBlank() &&
-                        currentQueueSize >= prevQueueSize &&
-                        currentQueueUris.take(prevQueueSize).joinToString("|") == prevQueueSignature
-                val replacedQueue =
-                    prevQueueSize > 0 &&
-                        currentSignature != prevQueueSignature &&
-                        !isAppend
-
-                if (replacedQueue) {
-                    showNowPlaying = true
-                }
-
-                prevQueueSize = currentQueueSize
-                prevQueueSignature = currentSignature
-            }
-        }
+        val uris = session?.queue?.map { it.uri }.orEmpty()
+        if (queueExpansion.shouldExpand(uris)) showNowPlaying = true
     }
 
     // Keep web playback active across mode switches, but pause it once local playback starts.
@@ -414,7 +373,7 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
     if (showNowPlaying) {
         BackHandler {
             showNowPlaying = false
-            suppressAutoExpand = true
+            queueExpansion.suppress(true)
         }
     }
 
@@ -513,7 +472,7 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
                     session = session,
                     onMinimize = {
                         showNowPlaying = false
-                        suppressAutoExpand = true
+                        queueExpansion.suppress(true)
                     },
                     onOpenQueue = { showQueueSheet = true },
                     onGoToArtist = { artistName ->
@@ -525,7 +484,7 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
                         appliedLocalSearchQuery = artistName
                         searchActive = true
                         showNowPlaying = false
-                        suppressAutoExpand = true
+                        queueExpansion.suppress(true)
                     },
                     onViewAlbum = { albumName ->
                         destination = RootDestination.Library
@@ -534,7 +493,7 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
                         appliedLocalSearchQuery = albumName
                         searchActive = true
                         showNowPlaying = false
-                        suppressAutoExpand = true
+                        queueExpansion.suppress(true)
                     }
                 )
             } else {
