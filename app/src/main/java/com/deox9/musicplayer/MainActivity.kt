@@ -108,6 +108,7 @@ import com.deox9.musicplayer.feature.settings.OpenSourceLicensesScreen
 import com.deox9.musicplayer.feature.settings.SettingsSheet
 import com.deox9.musicplayer.feature.settings.SettingsViewModel
 import com.deox9.musicplayer.library.LocalMusicRepository
+import com.deox9.musicplayer.player.PlaybackState
 import com.deox9.musicplayer.scanner.LibraryScanWorker
 import com.deox9.musicplayer.ui.AlbumSortOption
 import com.deox9.musicplayer.ui.CollectionSortOption
@@ -275,53 +276,7 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
         appliedLocalSearchQuery = localSearchQuery
     }
 
-    DisposableEffect(Unit) {
-        // Restoring the last session is the service's job now: it happens in
-        // PlaybackService.onCreate, which runs when the MediaController binds.
-
-        // Index on launch. Cheap when nothing changed, and it is what populates the
-        // library the first time the app runs.
-        LibraryScanWorker.enqueue(context)
-        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
-            override fun onChange(selfChange: Boolean) {
-                LocalMusicRepository.invalidateCaches()
-                // A change means files were added, removed or retagged, so re-index.
-                // The worker uses KEEP, so a burst during a large copy coalesces
-                // into one scan rather than restarting it repeatedly.
-                LibraryScanWorker.enqueue(context)
-            }
-
-            override fun onChange(selfChange: Boolean, uri: Uri?) {
-                LocalMusicRepository.invalidateCaches()
-                LibraryScanWorker.enqueue(context)
-            }
-        }
-
-        context.contentResolver.registerContentObserver(
-            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-            true,
-            observer
-        )
-        context.contentResolver.registerContentObserver(
-            MediaStore.Audio.Albums.EXTERNAL_CONTENT_URI,
-            true,
-            observer
-        )
-        context.contentResolver.registerContentObserver(
-            MediaStore.Audio.Playlists.EXTERNAL_CONTENT_URI,
-            true,
-            observer
-        )
-        context.contentResolver.registerContentObserver(
-            MediaStore.Audio.Genres.EXTERNAL_CONTENT_URI,
-            true,
-            observer
-        )
-
-        onDispose {
-            context.contentResolver.unregisterContentObserver(observer)
-        }
-    }
+    RescanWhenMediaChanges()
 
     // Opens the player when the queue is replaced, not when it is added to. The
     // rule itself lives in QueueExpansion, where it is tested.
@@ -331,18 +286,11 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
     }
 
     // Keep web playback active across mode switches, but pause it once local playback starts.
-    LaunchedEffect(session?.updatedAtMs) {
-        val currentSession = session ?: return@LaunchedEffect
-        val localTrackStarted =
-            currentSession.isPlaying &&
-                currentSession.uri.startsWith("content://") &&
-                currentSession.uri != lastPausedWebForLocalUri
-
-        if (localTrackStarted) {
-            WebPlayback.pause(webPlaybackView)
-            lastPausedWebForLocalUri = currentSession.uri
-        }
-    }
+    lastPausedWebForLocalUri = pauseWebWhenLocalPlaybackStarts(
+        session = session,
+        webView = webPlaybackView,
+        alreadyPausedFor = lastPausedWebForLocalUri,
+    )
 
     // A track can fail while the user is anywhere in the app — browsing the library,
     // on another destination, or with the screen off and the notification driving
@@ -1039,3 +987,69 @@ private fun rememberLibraryListStates(): LibraryListStates = LibraryListStates(
     favourites = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
     search = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
 )
+
+/**
+ * Keeps the library in step with the files on the device.
+ *
+ * Indexes once on launch — cheap when nothing changed, and it is what fills the
+ * library the first time — then re-indexes whenever MediaStore reports a change.
+ * The worker uses KEEP, so a burst during a large copy coalesces into one scan
+ * rather than restarting it repeatedly.
+ *
+ * Lifted out of the root composable because it is fifty lines of registration that
+ * nothing else on that screen interacts with.
+ */
+@Composable
+private fun RescanWhenMediaChanges() {
+    val context = LocalContext.current
+    DisposableEffect(Unit) {
+        LibraryScanWorker.enqueue(context)
+
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) = rescan()
+            override fun onChange(selfChange: Boolean, uri: Uri?) = rescan()
+
+            private fun rescan() {
+                LocalMusicRepository.invalidateCaches()
+                LibraryScanWorker.enqueue(context)
+            }
+        }
+
+        context.contentResolver.registerContentObserver(
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+            true,
+            observer,
+        )
+        onDispose { context.contentResolver.unregisterContentObserver(observer) }
+    }
+}
+
+/**
+ * Silences the web player once local playback starts, and returns what it silenced for.
+ *
+ * Both can be playing at once — the WebView keeps running when the mode switches, on
+ * purpose, so going back to it resumes where it was. What is not wanted is two things
+ * playing over each other, so starting a local track stops the web one.
+ *
+ * The returned URI is what stops it firing repeatedly for the same track: the effect
+ * runs on every session update, which is once a second while playing.
+ */
+@Composable
+private fun pauseWebWhenLocalPlaybackStarts(
+    session: PlaybackState?,
+    webView: WebView?,
+    alreadyPausedFor: String,
+): String {
+    var pausedFor by remember { mutableStateOf(alreadyPausedFor) }
+    LaunchedEffect(session?.updatedAtMs) {
+        val current = session ?: return@LaunchedEffect
+        val localTrackStarted = current.isPlaying &&
+            current.uri.startsWith("content://") &&
+            current.uri != pausedFor
+        if (localTrackStarted) {
+            WebPlayback.pause(webView)
+            pausedFor = current.uri
+        }
+    }
+    return pausedFor
+}
