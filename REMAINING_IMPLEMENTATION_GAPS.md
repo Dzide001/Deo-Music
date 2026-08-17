@@ -22,7 +22,7 @@ Last verified against the code on 2026-08-17.
 | Item | Notes |
 | --- | --- |
 | Web screen screenshots | The queue sidebar and the settings sheet's controls are covered now. The web screen is not: it is a WebView with an overlay, and Robolectric cannot render a WebView — only the ad-filter overlay could be pinned, and that lives in the app module's `full` flavour, which has no screenshot setup. |
-| Seeded large library | A generated 30k-track library to test scanning and scrolling against. The real device library is ~150 tracks. |
+| Large-library scanning and scrolling | The pure computations are tested against 30,000 tracks. Scanning that many files and scrolling a list of them are not: both need a device with the files actually on it, and the test phone holds about 150. |
 
 ## Waiting on the repository owner
 
