@@ -79,7 +79,7 @@ fun ArtistsScreen(
 }
 
 @Composable
-private fun ArtistsList(
+internal fun ArtistsList(
     artists: List<ArtistInfo>,
     searchQuery: String,
     sortOption: CollectionSortOption,

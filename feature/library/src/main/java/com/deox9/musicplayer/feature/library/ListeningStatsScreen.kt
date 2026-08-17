@@ -45,7 +45,6 @@ import com.deox9.musicplayer.library.listeningStats
  * screen that both reveals and destroys on the first release is a screen where the
  * destructive half gets pressed by someone still working out what the numbers mean.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ListeningStatsScreen(
     onBack: () -> Unit,
@@ -55,6 +54,22 @@ fun ListeningStatsScreen(
     val signals by viewModel.recommendationSignals.collectAsState()
     val stats = remember(tracks, signals) { listeningStats(tracks, signals) }
 
+    ListeningStatsContent(stats = stats, onBack = onBack)
+}
+
+/**
+ * The screen with the numbers already worked out.
+ *
+ * Split from the composable above so it can be rendered without an app around it —
+ * a screen that reaches for a view model cannot be screenshot-tested, previewed, or
+ * looked at in isolation at all. Everything it needs is one value.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ListeningStatsContent(
+    stats: ListeningStats,
+    onBack: () -> Unit,
+) {
     Scaffold(
         topBar = {
             TopAppBar(

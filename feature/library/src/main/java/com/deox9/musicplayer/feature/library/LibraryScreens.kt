@@ -71,6 +71,7 @@ import com.deox9.musicplayer.library.FolderInfo
 import com.deox9.musicplayer.library.GenreInfo
 import com.deox9.musicplayer.library.LocalTrack
 import com.deox9.musicplayer.library.PlaylistInfo
+import com.deox9.musicplayer.library.SuggestedRecommendation
 import com.deox9.musicplayer.library.SuggestionSeed
 import com.deox9.musicplayer.library.recommendTracks
 import com.deox9.musicplayer.player.QueuedTrack
@@ -203,7 +204,7 @@ fun PlaylistsScreen(
 }
 
 @Composable
-private fun PlaylistsList(
+internal fun PlaylistsList(
     playlists: List<PlaylistInfo>,
     searchQuery: String,
     sortOption: CollectionSortOption,
@@ -331,7 +332,7 @@ fun FoldersScreen(
 }
 
 @Composable
-private fun FoldersList(
+internal fun FoldersList(
     folders: List<FolderInfo>,
     searchQuery: String,
     sortOption: CollectionSortOption,
@@ -424,7 +425,7 @@ fun GenresScreen(
 }
 
 @Composable
-private fun GenresList(
+internal fun GenresList(
     genres: List<GenreInfo>,
     searchQuery: String,
     sortOption: CollectionSortOption,
@@ -534,6 +535,45 @@ fun SuggestedScreen(
         )
     }
 
+    SuggestedContent(
+        recommendations = recommendations,
+        favourites = favourites,
+        seedArtist = session?.artist.orEmpty(),
+        listState = listState,
+        onRefresh = { refreshNonce += 1 },
+        onToggleFavourite = viewModel::toggleFavourite,
+        onPlay = { rec ->
+            playback.playFrom(recommendations.map { it.track.asQueued() }, recommendations.indexOf(rec))
+        },
+        onPlayNext = { playback.playNext(it.contentUri, it.title, it.artist) },
+        onAddToQueue = { playback.addToQueue(it.contentUri, it.title, it.artist) },
+        onLike = { scope.launch { viewModel.setRecommendationLiked(it, liked = true) } },
+        onHide = { scope.launch { viewModel.setRecommendationHidden(it, hidden = true) } },
+    )
+}
+
+/**
+ * The suggestions list, with nothing left to work out.
+ *
+ * Separated from the screen above so it can be rendered without a view model. The
+ * ranking was already pure — that moved to core/model with its own tests — and this
+ * is the other half of the same idea: the part that decides and the part that draws
+ * should each be reachable on their own.
+ */
+@Composable
+internal fun SuggestedContent(
+    recommendations: List<SuggestedRecommendation>,
+    favourites: Set<String>,
+    seedArtist: String,
+    listState: LazyListState,
+    onRefresh: () -> Unit,
+    onToggleFavourite: (String) -> Unit,
+    onPlay: (SuggestedRecommendation) -> Unit,
+    onPlayNext: (LocalTrack) -> Unit,
+    onAddToQueue: (LocalTrack) -> Unit,
+    onLike: (String) -> Unit,
+    onHide: (String) -> Unit,
+) {
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
@@ -547,14 +587,14 @@ fun SuggestedScreen(
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold
             )
-            OutlinedButton(onClick = { refreshNonce += 1 }) {
+            OutlinedButton(onClick = onRefresh) {
                 Text("Refresh")
             }
         }
 
-        if (session?.artist?.isNotBlank() == true) {
+        if (seedArtist.isNotBlank()) {
             Text(
-                text = "Based on your current listening: ${session?.artist}",
+                text = "Based on your current listening: $seedArtist",
                 style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
@@ -571,18 +611,10 @@ fun SuggestedScreen(
                     LocalTrackRow(
                         track = rec.track,
                         isFavourite = rec.track.contentUri in favourites,
-                        onToggleFavourite = {
-                            viewModel.toggleFavourite(rec.track.contentUri)
-                        },
-                        onClick = {
-                            playback.playFrom(recommendations.map { it.track.asQueued() }, recommendations.indexOf(rec))
-                        },
-                        onPlayNext = {
-                            playback.playNext(rec.track.contentUri, rec.track.title, rec.track.artist)
-                        },
-                        onAddToQueue = {
-                            playback.addToQueue(rec.track.contentUri, rec.track.title, rec.track.artist)
-                        }
+                        onToggleFavourite = { onToggleFavourite(rec.track.contentUri) },
+                        onClick = { onPlay(rec) },
+                        onPlayNext = { onPlayNext(rec.track) },
+                        onAddToQueue = { onAddToQueue(rec.track) }
                     )
                     Text(
                         text = "Suggested because: ${rec.reason}",
@@ -594,20 +626,12 @@ fun SuggestedScreen(
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         TextButton(
-                            onClick = {
-                                scope.launch {
-                                    viewModel.setRecommendationLiked(rec.track.contentUri, liked = true)
-                                }
-                            }
+                            onClick = { onLike(rec.track.contentUri) }
                         ) {
                             Text("Like")
                         }
                         TextButton(
-                            onClick = {
-                                scope.launch {
-                                    viewModel.setRecommendationHidden(rec.track.contentUri, hidden = true)
-                                }
-                            }
+                            onClick = { onHide(rec.track.contentUri) }
                         ) {
                             Text("Hide")
                         }
@@ -1264,7 +1288,7 @@ private fun AudioPermissionPrompt(message: String, onGrant: () -> Unit) {
 }
 
 @Composable
-private fun AlbumsList(
+internal fun AlbumsList(
     albums: List<Album>,
     searchQuery: String,
     sortOption: AlbumSortOption,
