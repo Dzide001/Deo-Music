@@ -22,4 +22,12 @@ data class LocalTrack(
      * express.
      */
     val rating: Int? = null,
+    /**
+     * When MediaStore first saw the file, in milliseconds.
+     *
+     * Zero means it did not say, which is different from the epoch and has to stay
+     * distinguishable — a track with no date must not sort as the oldest thing in
+     * the library.
+     */
+    val dateAddedMs: Long = 0L,
 )

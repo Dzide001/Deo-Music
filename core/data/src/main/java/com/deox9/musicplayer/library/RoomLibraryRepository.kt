@@ -177,4 +177,5 @@ private fun TrackWithNames.toLocalTrack(): LocalTrack = LocalTrack(
     contentUri = mediaUri,
     artworkUri = albumMediaStoreId?.let { AlbumArt.forAlbumId(it).toString() },
     rating = rating,
+    dateAddedMs = dateAddedMs,
 )

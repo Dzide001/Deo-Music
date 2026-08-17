@@ -23,7 +23,6 @@ Last verified against the code on 2026-08-17.
 | --- | --- |
 | POPM ratings | Read and write the ID3 popularimeter frame, so ratings survive outside this app. eAlvaTag is already a dependency and already writes tags. |
 | Lyrics offset control | The parser handles LRC timings; there is no UI to nudge them when a file's timings are consistently early or late. |
-| Auto-generated playlists | "Most played" and "Recently added" as real playlists. The counts behind the first now exist and are surfaced in Settings → Your listening. |
 | Screenshot regression tests | Nothing currently catches a layout regression except driving the device by hand. |
 | Renovate | Dependency updates are manual, and the pinned versions in the original planning docs were wrong often enough to matter. |
 | Seeded large library | A generated 30k-track library to test scanning and scrolling against. The real device library is ~150 tracks. |

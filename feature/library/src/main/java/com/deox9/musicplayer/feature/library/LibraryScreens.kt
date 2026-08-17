@@ -67,12 +67,14 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.deox9.musicplayer.library.Album
+import com.deox9.musicplayer.library.AutoPlaylist
 import com.deox9.musicplayer.library.FolderInfo
 import com.deox9.musicplayer.library.GenreInfo
 import com.deox9.musicplayer.library.LocalTrack
 import com.deox9.musicplayer.library.PlaylistInfo
 import com.deox9.musicplayer.library.SuggestedRecommendation
 import com.deox9.musicplayer.library.SuggestionSeed
+import com.deox9.musicplayer.library.autoPlaylists
 import com.deox9.musicplayer.library.recommendTracks
 import com.deox9.musicplayer.player.QueuedTrack
 import com.deox9.musicplayer.scanner.LibraryScanWorker
@@ -95,6 +97,8 @@ fun PlaylistsScreen(
     listState: LazyListState
 ) {
     val context = LocalContext.current
+    val playback = viewModel.playback
+    val favourites by viewModel.favourites.collectAsState()
     var selected by remember { mutableStateOf<PlaylistInfo?>(null) }
     var exportTarget by remember { mutableStateOf<PlaylistInfo?>(null) }
     var pendingDelete by remember { mutableStateOf<PlaylistInfo?>(null) }
@@ -119,6 +123,16 @@ fun PlaylistsScreen(
     val playlists by produceState<List<PlaylistInfo>>(initialValue = emptyList(), revision) {
         value = viewModel.playlists()
     }
+
+    // Worked out from data the app already holds — play counts kept for the Suggested
+    // tab, and the date MediaStore recorded for each file — so these cost nothing new
+    // to store and nothing new to track.
+    val allTracks by viewModel.tracks.collectAsState()
+    val signals by viewModel.recommendationSignals.collectAsState()
+    val generated = remember(allTracks, signals) {
+        autoPlaylists(allTracks, signals.trackPlayCounts)
+    }
+    var selectedAuto by remember { mutableStateOf<AutoPlaylist?>(null) }
 
     val openPlaylist = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
@@ -161,6 +175,20 @@ fun PlaylistsScreen(
             {
                 PlaylistDetailScreen(playlist = playlist, onBack = { selected = null })
             }
+        } ?: selectedAuto?.let { auto ->
+            {
+                AutoPlaylistDetail(
+                    playlist = auto,
+                    favourites = favourites,
+                    onBack = { selectedAuto = null },
+                    onToggleFavourite = viewModel::toggleFavourite,
+                    onPlay = { track, ordered ->
+                        playback.playFrom(ordered.map { it.asQueued() }, ordered.indexOf(track))
+                    },
+                    onPlayNext = { playback.playNext(it.contentUri, it.title, it.artist) },
+                    onAddToQueue = { playback.addToQueue(it.contentUri, it.title, it.artist) },
+                )
+            }
         },
     ) {
         Column {
@@ -192,7 +220,9 @@ fun PlaylistsScreen(
                 searchQuery = searchQuery,
                 sortOption = sortOption,
                 listState = listState,
+                autoPlaylists = generated,
                 onSelect = { selected = it },
+                onSelectAuto = { selectedAuto = it },
                 onExport = { playlist ->
                     exportTarget = playlist
                     createPlaylistFile.launch("${playlist.name}.m3u8")
@@ -203,13 +233,59 @@ fun PlaylistsScreen(
     }
 }
 
+/**
+ * A generated playlist's tracks.
+ *
+ * Its own screen rather than reusing the saved-playlist detail because the two are
+ * not the same thing: this one has no rename, no reorder and no delete, since there
+ * is nothing stored to rename or delete. Offering those controls and having them do
+ * nothing would be worse than not offering them.
+ */
+@Composable
+internal fun AutoPlaylistDetail(
+    playlist: AutoPlaylist,
+    favourites: Set<String>,
+    onBack: () -> Unit,
+    onToggleFavourite: (String) -> Unit,
+    onPlay: (LocalTrack, List<LocalTrack>) -> Unit,
+    onPlayNext: (LocalTrack) -> Unit,
+    onAddToQueue: (LocalTrack) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Text(text = playlist.name, style = MaterialTheme.typography.titleMedium)
+        }
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
+            items(playlist.tracks, key = { it.id }) { track ->
+                LocalTrackRow(
+                    track = track,
+                    isFavourite = track.contentUri in favourites,
+                    onToggleFavourite = { onToggleFavourite(track.contentUri) },
+                    onClick = { onPlay(track, playlist.tracks) },
+                    onPlayNext = { onPlayNext(track) },
+                    onAddToQueue = { onAddToQueue(track) },
+                )
+                HorizontalDivider()
+            }
+        }
+    }
+}
+
 @Composable
 internal fun PlaylistsList(
     playlists: List<PlaylistInfo>,
+    autoPlaylists: List<AutoPlaylist>,
     searchQuery: String,
     sortOption: CollectionSortOption,
     listState: LazyListState,
     onSelect: (PlaylistInfo) -> Unit,
+    onSelectAuto: (AutoPlaylist) -> Unit,
     onExport: (PlaylistInfo) -> Unit,
     onDelete: (PlaylistInfo) -> Unit,
 ) {
@@ -227,7 +303,18 @@ internal fun PlaylistsList(
         }
     }
 
-    if (filtered.isEmpty()) {
+    // Generated lists are filtered by the same query, so searching narrows the whole
+    // tab rather than leaving two entries stuck at the top matching nothing.
+    val filteredAuto = remember(autoPlaylists, searchQuery) {
+        if (searchQuery.isBlank()) {
+            autoPlaylists
+        } else {
+            val q = searchQuery.trim().lowercase()
+            autoPlaylists.filter { it.name.lowercase().contains(q) }
+        }
+    }
+
+    if (filtered.isEmpty() && filteredAuto.isEmpty()) {
         Box(modifier = Modifier.padding(16.dp)) {
             Text(if (searchQuery.isBlank()) "No playlists found." else "No playlists match your search.")
         }
@@ -238,6 +325,29 @@ internal fun PlaylistsList(
         state = listState,
         modifier = Modifier.fillMaxSize()
     ) {
+        items(filteredAuto, key = { "auto-${it.kind}" }) { auto ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClickLabel = "Open") { onSelectAuto(auto) }
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = auto.name, style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        // Says where the list came from, because a playlist nobody
+                        // made appearing among ones they did is otherwise confusing.
+                        text = "${auto.trackCount} ${if (auto.trackCount == 1) "track" else "tracks"} " +
+                            "· made for you",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            HorizontalDivider()
+        }
+
         items(filtered, key = { it.id }) { playlist ->
             Row(
                 modifier = Modifier

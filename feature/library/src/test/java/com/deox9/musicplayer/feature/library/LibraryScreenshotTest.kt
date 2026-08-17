@@ -10,6 +10,8 @@ import androidx.compose.ui.Modifier
 import com.deox9.musicplayer.library.Album
 import com.deox9.musicplayer.library.ArtistInfo
 import com.deox9.musicplayer.library.ArtistTally
+import com.deox9.musicplayer.library.AutoPlaylist
+import com.deox9.musicplayer.library.AutoPlaylistKind
 import com.deox9.musicplayer.library.FolderInfo
 import com.deox9.musicplayer.library.GenreInfo
 import com.deox9.musicplayer.library.ListeningStats
@@ -171,10 +173,12 @@ class LibraryScreenshotTest {
                     PlaylistInfo(1, "Morning", 14),
                     PlaylistInfo(2, "Long drive", 63),
                 ),
+                autoPlaylists = emptyList(),
                 searchQuery = "",
                 sortOption = CollectionSortOption.Name,
                 listState = rememberLazyListState(),
                 onSelect = {},
+                onSelectAuto = {},
                 onExport = {},
                 onDelete = {},
             )
@@ -345,6 +349,47 @@ class LibraryScreenshotTest {
                 albumResults = emptyList(),
                 favourites = emptySet(),
                 listState = rememberLazyListState(),
+                onToggleFavourite = {},
+                onPlay = { _, _ -> },
+                onPlayNext = {},
+                onAddToQueue = {},
+            )
+        }
+    }
+
+    /**
+     * Generated lists sit above the ones someone made, and say where they came from.
+     *
+     * Pinned because "made for you" is the only thing distinguishing a playlist
+     * nobody created from the ones they did, and it is a line of text easy to lose.
+     */
+    @Test
+    fun `playlists with generated ones above them`() {
+        capture("playlists-with-generated") {
+            PlaylistsList(
+                playlists = listOf(PlaylistInfo(1, "Morning", 14)),
+                autoPlaylists = listOf(
+                    AutoPlaylist(AutoPlaylistKind.MostPlayed, songs),
+                    AutoPlaylist(AutoPlaylistKind.RecentlyAdded, songs.take(1)),
+                ),
+                searchQuery = "",
+                sortOption = CollectionSortOption.Name,
+                listState = rememberLazyListState(),
+                onSelect = {},
+                onSelectAuto = {},
+                onExport = {},
+                onDelete = {},
+            )
+        }
+    }
+
+    @Test
+    fun `a generated playlist's tracks`() {
+        capture("auto-playlist-detail") {
+            AutoPlaylistDetail(
+                playlist = AutoPlaylist(AutoPlaylistKind.MostPlayed, songs),
+                favourites = setOf(songs[0].contentUri),
+                onBack = {},
                 onToggleFavourite = {},
                 onPlay = { _, _ -> },
                 onPlayNext = {},
