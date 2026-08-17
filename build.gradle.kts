@@ -15,8 +15,9 @@ detekt {
     config.setFrom(rootProject.file("config/detekt/detekt.yml"))
     // Existing structural debt, almost all of it inside the oversized
     // MainActivity.kt. New violations still fail the build. Entries should be
-    // deleted as the UI is split into feature modules — the goal is no baseline.
-    baseline = rootProject.file("config/detekt/baseline.xml")
+    // No baseline. There was one — 23 entries at its worst — and every entry is now
+    // gone rather than suppressed, so the file is deleted instead of left empty. An
+    // empty baseline is an invitation to add to it.
     source.setFrom(
         files(
             "app/src/main/java",

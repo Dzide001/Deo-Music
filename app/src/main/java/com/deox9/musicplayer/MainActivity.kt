@@ -22,6 +22,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -232,23 +233,15 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
     val context = LocalContext.current
     var destination by rememberSaveable { mutableStateOf(RootDestination.Library) }
     var localTab by rememberSaveable { mutableStateOf(LibraryTab.Songs) }
-    var localSearchQuery by rememberSaveable { mutableStateOf("") }
-    var searchActive by rememberSaveable { mutableStateOf(false) }
-    var appliedLocalSearchQuery by rememberSaveable { mutableStateOf("") }
-    var webSearchQuery by rememberSaveable { mutableStateOf("") }
-    var showSortMenu by rememberSaveable { mutableStateOf(false) }
-    var showSettingsSheet by rememberSaveable { mutableStateOf(false) }
+    val search = rememberSearchFields()
+    val sortMenu = rememberSortMenu()
     var showLicenses by rememberSaveable { mutableStateOf(false) }
-    var songSortOption by rememberSaveable { mutableStateOf(SongSortOption.Title) }
-    var albumSortOption by rememberSaveable { mutableStateOf(AlbumSortOption.Name) }
-    var collectionSortOption by rememberSaveable { mutableStateOf(CollectionSortOption.Name) }
+    val sheets = rememberAppSheets(onShowLicenses = { showLicenses = true })
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
-    var showQueueSheet by rememberSaveable { mutableStateOf(false) }
     // Not rememberSaveable: the tracker's whole job is telling a queue the listener
     // just chose from one restored on launch, and restoring its state across process
     // death would make every cold start look like a deliberate change.
     val queueExpansion = remember { QueueExpansion() }
-    var showPerfOverlay by rememberSaveable { mutableStateOf(false) }
     var webPlaybackView by remember { mutableStateOf<WebView?>(null) }
     var lastPausedWebForLocalUri by rememberSaveable { mutableStateOf("") }
 
@@ -270,11 +263,6 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
     val snackbarHostState = remember { SnackbarHostState() }
 
     RequestNotificationPermission()
-
-    LaunchedEffect(localSearchQuery) {
-        delay(180)
-        appliedLocalSearchQuery = localSearchQuery
-    }
 
     RescanWhenMediaChanges()
 
@@ -335,166 +323,415 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
             snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
                 if (!showNowPlaying) {
-                    // The app draws edge to edge (enforced from targetSdk 35), so the
-                    // header must inset itself past the status bar. Without this the
-                    // header sits underneath it and the status bar swallows taps —
-                    // which made the Settings button unreachable on-device.
-                    Box(modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars)) {
-                        AppHeader(
-                            destination = destination,
-                            localTab = localTab,
-                            searchActive = searchActive,
-                            onSearchActiveChange = { searchActive = it },
-                            localSearchQuery = localSearchQuery,
-                            webSearchQuery = webSearchQuery,
-                            onLocalSearchChange = { localSearchQuery = it },
-                            onWebSearchChange = { webSearchQuery = it },
-                            onRescan = {
-                                LibraryScanWorker.enqueue(context, thorough = true)
-                            },
-                            showSortMenu = showSortMenu,
-                            onShowSortMenuChange = { showSortMenu = it },
-                            onOpenSettings = { showSettingsSheet = true },
-                            songSortOption = songSortOption,
-                            albumSortOption = albumSortOption,
-                            onSongSortChange = {
-                                songSortOption = it
-                                showSortMenu = false
-                            },
-                            onAlbumSortChange = {
-                                albumSortOption = it
-                                showSortMenu = false
-                            },
-                            collectionSortOption = collectionSortOption,
-                            onCollectionSortChange = {
-                                collectionSortOption = it
-                                showSortMenu = false
-                            }
-                        )
-                    }
+                    AppTopBar(
+                        destination = destination,
+                        localTab = localTab,
+                        search = search,
+                        sortMenu = sortMenu,
+                        onRescan = { LibraryScanWorker.enqueue(context, thorough = true) },
+                        onOpenSettings = sheets.onOpenSettings,
+                    )
                 }
             },
             bottomBar = {
-                // Likewise for the gesture bar, which otherwise overlaps the mini player.
-                Column(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
-                    if (!showNowPlaying) {
-                        MiniPlayerBar(
-                            session = session,
-                            onExpand = { showNowPlaying = true },
-                            onOpenQueue = { showQueueSheet = true }
-                        )
-                        // The mini player stays along the bottom even with a rail: it is
-                        // the width of it that makes the artwork and title readable, and
-                        // a rail-width version would be a column of icons.
-                        if (!useRail) {
-                            AppNavigationBar(
-                                selected = destination,
-                                onSelect = { destination = it },
-                            )
-                        }
-                    }
+                if (!showNowPlaying) {
+                    AppBottomBar(
+                        session = session,
+                        destination = destination,
+                        // The mini player stays along the bottom even with a rail: it
+                        // is the width of it that makes the artwork and title
+                        // readable, and a rail-width version would be a column of
+                        // icons.
+                        showNavigationBar = !useRail,
+                        onSelectDestination = { destination = it },
+                        onExpandPlayer = { showNowPlaying = true },
+                        onOpenQueue = sheets.onOpenQueue,
+                    )
                 }
             }
         ) { innerPadding ->
-            if (showNowPlaying) {
-                ExpandedNowPlayingScreen(
-                    session = session,
-                    onMinimize = {
+            AppContent(
+                innerPadding = innerPadding,
+                session = session,
+                showNowPlaying = showNowPlaying,
+                onMinimizeNowPlaying = {
+                    showNowPlaying = false
+                    queueExpansion.suppress(true)
+                },
+                navigation = LibraryNavigation(
+                    destination = destination,
+                    tab = localTab,
+                    visibleTabs = visibleTabs,
+                    searchQuery = search.appliedLocalQuery,
+                    webSearchQuery = search.webQuery,
+                    sorts = sortMenu.options,
+                    onSelectTab = { localTab = it },
+                    onShowInLibrary = { tab, query ->
+                        destination = RootDestination.Library
+                        localTab = tab
+                        search.onApply(query)
                         showNowPlaying = false
                         queueExpansion.suppress(true)
                     },
-                    onOpenQueue = { showQueueSheet = true },
-                    onGoToArtist = { artistName ->
-                        destination = RootDestination.Library
-                        // The Artists tab exists now, so "go to artist" lands on the
-                        // artist rather than on a song list filtered by their name.
-                        localTab = LibraryTab.Artists
-                        localSearchQuery = artistName
-                        appliedLocalSearchQuery = artistName
-                        searchActive = true
-                        showNowPlaying = false
-                        queueExpansion.suppress(true)
-                    },
-                    onViewAlbum = { albumName ->
-                        destination = RootDestination.Library
-                        localTab = LibraryTab.Albums
-                        localSearchQuery = albumName
-                        appliedLocalSearchQuery = albumName
-                        searchActive = true
-                        showNowPlaying = false
-                        queueExpansion.suppress(true)
-                    }
+                ),
+                sheets = sheets,
+                listStates = listStates,
+                onWebViewReady = { webPlaybackView = it },
+            )
+        }
+    }
+}
+
+/** How the library is sorted, per kind of list. */
+@Stable
+private class LibrarySortOptions(
+    val song: SongSortOption,
+    val album: AlbumSortOption,
+    val collection: CollectionSortOption,
+)
+
+/**
+ * The sort menu, and what it does when something in it is picked.
+ *
+ * Each callback closes the menu as well as applying the choice. That belongs here
+ * rather than in the menu itself because it is a decision about behaviour — a sort
+ * order is a single choice, so the menu has said everything it has to say once one
+ * is made.
+ */
+@Stable
+private class SortMenu(
+    val options: LibrarySortOptions,
+    val expanded: Boolean,
+    val onExpandedChange: (Boolean) -> Unit,
+    onSong: (SongSortOption) -> Unit,
+    onAlbum: (AlbumSortOption) -> Unit,
+    onCollection: (CollectionSortOption) -> Unit,
+) {
+    val onSong: (SongSortOption) -> Unit = { song ->
+        onSong(song)
+        onExpandedChange(false)
+    }
+    val onAlbum: (AlbumSortOption) -> Unit = { album ->
+        onAlbum(album)
+        onExpandedChange(false)
+    }
+    val onCollection: (CollectionSortOption) -> Unit = { collection ->
+        onCollection(collection)
+        onExpandedChange(false)
+    }
+}
+
+/**
+ * The sort state, owned here rather than by the screen.
+ *
+ * Four pieces of state that are only ever read together, so they are remembered
+ * together — and AppRoot, which does not care how anything is sorted, no longer
+ * declares any of it.
+ */
+@Composable
+private fun rememberSortMenu(): SortMenu {
+    var song by rememberSaveable { mutableStateOf(SongSortOption.Title) }
+    var album by rememberSaveable { mutableStateOf(AlbumSortOption.Name) }
+    var collection by rememberSaveable { mutableStateOf(CollectionSortOption.Name) }
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    return SortMenu(
+        options = LibrarySortOptions(song = song, album = album, collection = collection),
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        onSong = { song = it },
+        onAlbum = { album = it },
+        onCollection = { collection = it },
+    )
+}
+
+/** The search field, which searches the library or the web depending where you are. */
+@Stable
+private class SearchFields(
+    val active: Boolean,
+    val localQuery: String,
+    val webQuery: String,
+    /** What the library actually filters on: the typed query, once it settles. */
+    val appliedLocalQuery: String,
+    val onActiveChange: (Boolean) -> Unit,
+    val onLocalChange: (String) -> Unit,
+    val onWebChange: (String) -> Unit,
+    /** Fills the field and applies it at once, for "show me this artist". */
+    val onApply: (String) -> Unit,
+)
+
+/**
+ * The search state, and the debounce between typing and filtering.
+ *
+ * The delay is why the applied query is separate from the typed one: filtering a
+ * large library on every keystroke makes the field feel like it is lagging behind
+ * the typist, when what is lagging is the list.
+ */
+@Composable
+private fun rememberSearchFields(): SearchFields {
+    var localQuery by rememberSaveable { mutableStateOf("") }
+    var webQuery by rememberSaveable { mutableStateOf("") }
+    var appliedLocalQuery by rememberSaveable { mutableStateOf("") }
+    var active by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(localQuery) {
+        delay(SEARCH_DEBOUNCE_MS)
+        appliedLocalQuery = localQuery
+    }
+
+    return SearchFields(
+        active = active,
+        localQuery = localQuery,
+        webQuery = webQuery,
+        appliedLocalQuery = appliedLocalQuery,
+        onActiveChange = { active = it },
+        onLocalChange = { localQuery = it },
+        onWebChange = { webQuery = it },
+        // Applied without waiting for the debounce, because nothing is being typed:
+        // the query arrived whole, from a tap on an artist or an album.
+        onApply = {
+            localQuery = it
+            appliedLocalQuery = it
+            active = true
+        },
+    )
+}
+
+private const val SEARCH_DEBOUNCE_MS = 180L
+
+/**
+ * The header, inset past the status bar.
+ *
+ * The app draws edge to edge (enforced from targetSdk 35), so the header has to
+ * inset itself. Without this it sits underneath the status bar and the status bar
+ * swallows taps aimed at it — which is what made the Settings button unreachable
+ * on-device rather than merely ugly.
+ */
+@Composable
+private fun AppTopBar(
+    destination: RootDestination,
+    localTab: LibraryTab,
+    search: SearchFields,
+    sortMenu: SortMenu,
+    onRescan: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    Box(modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars)) {
+        AppHeader(
+            destination = destination,
+            localTab = localTab,
+            searchActive = search.active,
+            onSearchActiveChange = search.onActiveChange,
+            localSearchQuery = search.localQuery,
+            webSearchQuery = search.webQuery,
+            onLocalSearchChange = search.onLocalChange,
+            onWebSearchChange = search.onWebChange,
+            onRescan = onRescan,
+            showSortMenu = sortMenu.expanded,
+            onShowSortMenuChange = sortMenu.onExpandedChange,
+            onOpenSettings = onOpenSettings,
+            songSortOption = sortMenu.options.song,
+            albumSortOption = sortMenu.options.album,
+            onSongSortChange = sortMenu.onSong,
+            onAlbumSortChange = sortMenu.onAlbum,
+            collectionSortOption = sortMenu.options.collection,
+            onCollectionSortChange = sortMenu.onCollection,
+        )
+    }
+}
+
+/**
+ * The mini player, and the navigation bar under it.
+ *
+ * Inset past the navigation bar for the same reason the header is inset past the
+ * status bar: the gesture bar would otherwise overlap the mini player's controls.
+ */
+@Composable
+private fun AppBottomBar(
+    session: PlaybackState?,
+    destination: RootDestination,
+    showNavigationBar: Boolean,
+    onSelectDestination: (RootDestination) -> Unit,
+    onExpandPlayer: () -> Unit,
+    onOpenQueue: () -> Unit,
+) {
+    Column(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
+        MiniPlayerBar(
+            session = session,
+            onExpand = onExpandPlayer,
+            onOpenQueue = onOpenQueue,
+        )
+        if (showNavigationBar) {
+            AppNavigationBar(
+                selected = destination,
+                onSelect = onSelectDestination,
+            )
+        }
+    }
+}
+
+/**
+ * Where the library is pointed, and how to point it somewhere else.
+ *
+ * Grouped into one object rather than passed as a dozen arguments because they are
+ * one thing: the selection the screen is showing. The alternative was a content
+ * composable with seventeen parameters, at which point the signature stops
+ * describing anything.
+ */
+@Stable
+private class LibraryNavigation(
+    val destination: RootDestination,
+    val tab: LibraryTab,
+    val visibleTabs: List<LibraryTab>,
+    val searchQuery: String,
+    val webSearchQuery: String,
+    val sorts: LibrarySortOptions,
+    val onSelectTab: (LibraryTab) -> Unit,
+    /**
+     * Jumps to a tab filtered to one thing — an artist, an album.
+     *
+     * One callback rather than one per destination, because "show me this artist"
+     * and "show me this album" were the same six assignments written out twice, and
+     * two copies of a six-step sequence drift.
+     */
+    val onShowInLibrary: (LibraryTab, String) -> Unit,
+)
+
+/**
+ * The sheets that open over the top of whatever is showing.
+ *
+ * Owns its own visibility, so the screen underneath does not declare a boolean for
+ * each one. Licenses is the exception and stays with AppRoot: it is a whole separate
+ * route rather than a sheet, and the screen returns early for it.
+ */
+@Composable
+private fun rememberAppSheets(onShowLicenses: () -> Unit): AppSheets {
+    var showQueue by rememberSaveable { mutableStateOf(false) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
+    var showPerformanceOverlay by rememberSaveable { mutableStateOf(false) }
+    return AppSheets(
+        showQueue = showQueue,
+        showSettings = showSettings,
+        showPerfOverlay = showPerformanceOverlay,
+        onOpenQueue = { showQueue = true },
+        onDismissQueue = { showQueue = false },
+        onOpenSettings = { showSettings = true },
+        onDismissSettings = { showSettings = false },
+        onShowLicenses = {
+            showSettings = false
+            onShowLicenses()
+        },
+        onShowPerfOverlayChange = { showPerformanceOverlay = it },
+    )
+}
+
+@Stable
+private class AppSheets(
+    val showQueue: Boolean,
+    val showSettings: Boolean,
+    val showPerfOverlay: Boolean,
+    val onOpenQueue: () -> Unit,
+    val onDismissQueue: () -> Unit,
+    val onOpenSettings: () -> Unit,
+    val onDismissSettings: () -> Unit,
+    val onShowLicenses: () -> Unit,
+    val onShowPerfOverlayChange: (Boolean) -> Unit,
+)
+
+/**
+ * Everything inside the Scaffold: the player, the browser, and the sheets over them.
+ *
+ * Now Playing replaces the content rather than covering it, which is why this is one
+ * branch and not a stack — the bars above and below already hide themselves for it,
+ * and drawing the library underneath a full-screen player only costs a composition.
+ */
+@Composable
+private fun AppContent(
+    innerPadding: PaddingValues,
+    session: PlaybackState?,
+    showNowPlaying: Boolean,
+    onMinimizeNowPlaying: () -> Unit,
+    navigation: LibraryNavigation,
+    sheets: AppSheets,
+    listStates: LibraryListStates,
+    onWebViewReady: (WebView) -> Unit,
+) {
+    val context = LocalContext.current
+
+    if (showNowPlaying) {
+        ExpandedNowPlayingScreen(
+            session = session,
+            onMinimize = onMinimizeNowPlaying,
+            onOpenQueue = sheets.onOpenQueue,
+            // The Artists tab exists now, so "go to artist" lands on the artist
+            // rather than on a song list filtered by their name.
+            onGoToArtist = { navigation.onShowInLibrary(LibraryTab.Artists, it) },
+            onViewAlbum = { navigation.onShowInLibrary(LibraryTab.Albums, it) },
+        )
+    } else {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            if (WebPlayback.IS_AVAILABLE) {
+                // Kept composed across destinations so the page and any playing
+                // media survive switching away and back.
+                WebPlayback.Screen(
+                    searchQuery = navigation.webSearchQuery,
+                    isVisible = navigation.destination == RootDestination.Web,
+                    onWebViewReady = onWebViewReady
                 )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
-                ) {
-                    if (WebPlayback.IS_AVAILABLE) {
-                        // Kept composed across destinations so the page and any playing
-                        // media survive switching away and back.
-                        WebPlayback.Screen(
-                            searchQuery = webSearchQuery,
-                            isVisible = destination == RootDestination.Web,
-                            onWebViewReady = { webPlaybackView = it }
+            }
+
+            if (navigation.destination == RootDestination.Search) {
+                SearchScreen(listState = listStates.search)
+            }
+
+            if (navigation.destination == RootDestination.Library) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    LibraryTabs(
+                        selected = navigation.tab,
+                        tabs = navigation.visibleTabs,
+                        onSelect = navigation.onSelectTab
+                    )
+                    Box(modifier = Modifier.weight(1f)) {
+                        LibraryTabContent(
+                            tab = navigation.tab,
+                            searchQuery = navigation.searchQuery,
+                            songSortOption = navigation.sorts.song,
+                            albumSortOption = navigation.sorts.album,
+                            collectionSortOption = navigation.sorts.collection,
+                            listStates = listStates,
                         )
-                    }
-
-                    if (destination == RootDestination.Search) {
-                        SearchScreen(listState = listStates.search)
-                    }
-
-                    if (destination == RootDestination.Library) {
-                        Column(modifier = Modifier.fillMaxSize()) {
-                            LibraryTabs(
-                                selected = localTab,
-                                tabs = visibleTabs,
-                                onSelect = { localTab = it }
-                            )
-                            Box(modifier = Modifier.weight(1f)) {
-                                LibraryTabContent(
-                                    tab = localTab,
-                                    searchQuery = appliedLocalSearchQuery,
-                                    songSortOption = songSortOption,
-                                    albumSortOption = albumSortOption,
-                                    collectionSortOption = collectionSortOption,
-                                    listStates = listStates,
-                                )
-                            }
-                        }
                     }
                 }
             }
-
-            if (showQueueSheet) {
-                QueueSidebar(
-                    queue = session?.queue.orEmpty(),
-                    currentIndex = session?.currentIndex ?: -1,
-                    onDismiss = { showQueueSheet = false }
-                )
-            }
-
-            if (showSettingsSheet) {
-                SettingsSheet(
-                    onDismiss = { showSettingsSheet = false },
-                    onShowLicenses = {
-                        showSettingsSheet = false
-                        showLicenses = true
-                    },
-                    showPerfOverlay = showPerfOverlay,
-                    onShowPerfOverlayChange = { showPerfOverlay = it }
-                )
-            }
-
-            if (isDebugBuild(context) && showPerfOverlay) {
-                DebugPerformanceOverlay(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp, end = 8.dp)
-                )
-            }
         }
+    }
+
+    if (sheets.showQueue) {
+        QueueSidebar(
+            queue = session?.queue.orEmpty(),
+            currentIndex = session?.currentIndex ?: -1,
+            onDismiss = sheets.onDismissQueue
+        )
+    }
+
+    if (sheets.showSettings) {
+        SettingsSheet(
+            onDismiss = sheets.onDismissSettings,
+            onShowLicenses = sheets.onShowLicenses,
+            showPerfOverlay = sheets.showPerfOverlay,
+            onShowPerfOverlayChange = sheets.onShowPerfOverlayChange
+        )
+    }
+
+    if (isDebugBuild(context) && sheets.showPerfOverlay) {
+        DebugPerformanceOverlay(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp, end = 8.dp)
+        )
     }
 }
 
