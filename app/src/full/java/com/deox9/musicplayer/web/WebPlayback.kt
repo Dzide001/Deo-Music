@@ -155,20 +155,11 @@ private fun WebPlaybackScreen(
         }
     }
 
-    LaunchedEffect(searchQuery) {
-        val query = searchQuery.trim()
-        if (query.length >= 2) {
-            delay(350)
-            val encoded = URLEncoder.encode(query, Charsets.UTF_8.name())
-            val target = "https://m.youtube.com/results?search_query=$encoded"
-            val current = webView.url.orEmpty()
-            if (current.contains("m.youtube.com/results") && current.contains("search_query=$encoded")) {
-                return@LaunchedEffect
-            }
-            fallbackTriggered = false
-            webView.loadUrl(target)
-        }
-    }
+    SearchYouTubeAsTyped(
+        webView = webView,
+        searchQuery = searchQuery,
+        onNavigating = { fallbackTriggered = false },
+    )
 
     DisposableEffect(Unit) {
         onDispose {
@@ -187,44 +178,104 @@ private fun WebPlaybackScreen(
         )
 
         if (isVisible) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(10.dp)
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f), RoundedCornerShape(10.dp))
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = "Ad-filter blocks: $blockedRequestCount",
-                    style = MaterialTheme.typography.labelMedium
-                )
-                if (!lastBlockedHost.isNullOrBlank()) {
-                    Text(
-                        text = "Last blocked: $lastBlockedHost",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                if (!lastLoadError.isNullOrBlank()) {
-                    Text(
-                        text = lastLoadError.orEmpty(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    TextButton(
-                        onClick = {
-                            fallbackTriggered = false
-                            webView.reload()
-                        }
-                    ) {
-                        Text("Retry")
-                    }
-                }
+            WebFilterStatus(
+                modifier = Modifier.align(Alignment.TopStart),
+                blockedRequestCount = blockedRequestCount,
+                lastBlockedHost = lastBlockedHost,
+                lastLoadError = lastLoadError,
+                onRetry = {
+                    fallbackTriggered = false
+                    webView.reload()
+                },
+            )
+        }
+    }
+}
+
+/**
+ * What the ad filter is doing, and what to do when a page will not load.
+ *
+ * On screen rather than in a log because this is the one part of the app whose
+ * behaviour is invisible when it works: a blocked request leaves no trace, so a
+ * running count is the only evidence the filter is running at all. The failure
+ * case earns its place for the opposite reason — a blank browser with no
+ * explanation reads as the app being broken, and the retry is the fix.
+ */
+@Composable
+private fun WebFilterStatus(
+    blockedRequestCount: Int,
+    lastBlockedHost: String?,
+    lastLoadError: String?,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .padding(10.dp)
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f), RoundedCornerShape(10.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = "Ad-filter blocks: $blockedRequestCount",
+            style = MaterialTheme.typography.labelMedium
+        )
+        if (!lastBlockedHost.isNullOrBlank()) {
+            Text(
+                text = "Last blocked: $lastBlockedHost",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (!lastLoadError.isNullOrBlank()) {
+            Text(
+                text = lastLoadError,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error
+            )
+            TextButton(onClick = onRetry) {
+                Text("Retry")
             }
         }
     }
 }
+
+/**
+ * Turns what the user types into a YouTube search, once they stop typing.
+ *
+ * The delay is a debounce: keyed on the query, each new keystroke cancels the
+ * previous coroutine before it fires, so a word typed at speed costs one page load
+ * rather than one per letter. Two characters is the floor because a single letter
+ * matches everything and is almost always the start of something longer.
+ *
+ * The early return covers the case where the page already shows this exact search —
+ * reloading it would throw away the user's scroll position for no new results.
+ */
+@Composable
+private fun SearchYouTubeAsTyped(
+    webView: WebView,
+    searchQuery: String,
+    onNavigating: () -> Unit,
+) {
+    LaunchedEffect(searchQuery) {
+        val query = searchQuery.trim()
+        if (query.length < SEARCH_MINIMUM_LENGTH) return@LaunchedEffect
+
+        delay(SEARCH_DEBOUNCE_MS)
+        val encoded = URLEncoder.encode(query, Charsets.UTF_8.name())
+        val target = "https://m.youtube.com/results?search_query=$encoded"
+        val current = webView.url.orEmpty()
+        val alreadyShowing =
+            current.contains("m.youtube.com/results") && current.contains("search_query=$encoded")
+        if (alreadyShowing) return@LaunchedEffect
+
+        onNavigating()
+        webView.loadUrl(target)
+    }
+}
+
+private const val SEARCH_MINIMUM_LENGTH = 2
+private const val SEARCH_DEBOUNCE_MS = 350L
 
 private class HardenedWebViewClient(
     private val onBlocked: (String) -> Unit,
