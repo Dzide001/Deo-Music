@@ -330,7 +330,20 @@ interface LibraryDao {
     suspend fun upsertScannedTracks(tracks: List<TrackEntity>) {
         val withExistingIds = tracks.map { incoming ->
             val existingId = trackIdForUri(incoming.mediaUri)
-            if (existingId != null) incoming.copy(id = existingId) else incoming
+            if (existingId == null) {
+                incoming
+            } else {
+                incoming.copy(
+                    id = existingId,
+                    // A rating the scan could not read must not erase one already
+                    // held. The scan reads ratings out of the file, and eAlvaTag can
+                    // only open a minority of files under scoped storage — so for
+                    // most tracks a rescan comes back with null, and taking that at
+                    // face value would silently delete the stars someone set. Null
+                    // here means "the scan learnt nothing", never "no rating".
+                    rating = incoming.rating ?: ratingFor(incoming.mediaUri),
+                )
+            }
         }
         upsertTracks(withExistingIds)
     }

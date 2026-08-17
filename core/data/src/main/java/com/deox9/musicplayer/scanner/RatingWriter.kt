@@ -3,6 +3,7 @@ package com.deox9.musicplayer.scanner
 
 import android.content.Context
 import android.content.IntentSender
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
@@ -80,6 +81,7 @@ class RatingWriter @Inject constructor(
                 tag.setField(FieldKey.RATING, value)
             }
             audioFile.save()
+            reindex(path)
         }.fold(
             onSuccess = { Result.Written },
             onFailure = { error ->
@@ -110,5 +112,21 @@ class RatingWriter @Inject constructor(
                 MediaStore.createWriteRequest(context.contentResolver, listOf(uri)).intentSender,
             )
         }.getOrDefault(Result.NotPermitted)
+    }
+
+    /**
+     * Tells MediaStore the file changed.
+     *
+     * Not optional, and not obvious. eAlvaTag saves by writing a temporary file and
+     * renaming it over the original, so as far as MediaStore is concerned the file it
+     * had indexed was deleted — it drops the row, and the track disappears out of a
+     * library that indexes from MediaStore. Found by rating a track and watching it
+     * vanish on the next scan, with the file sitting on disk, intact, still playing.
+     *
+     * The rating survives the round trip because it is in the file: the re-index
+     * reads the POPM frame back and puts the stars where they were.
+     */
+    private fun reindex(path: String) {
+        MediaScannerConnection.scanFile(context, arrayOf(path), null, null)
     }
 }
