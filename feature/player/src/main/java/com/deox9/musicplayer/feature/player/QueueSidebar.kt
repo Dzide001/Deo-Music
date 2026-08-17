@@ -121,7 +121,9 @@ fun QueueSidebar(
                         QueueList(
                             reorder = reorder,
                             currentIndex = currentIndex,
-                            playback = playback,
+                            onPlayIndex = playback::playQueueIndex,
+                            onRemoveIndex = playback::removeQueueIndex,
+                            onMoveItem = playback::moveQueueItem,
                         )
                     }
                     Spacer(modifier = Modifier.height(12.dp))
@@ -140,7 +142,7 @@ fun QueueSidebar(
 }
 
 @Composable
-private fun QueueHeader(count: Int, onDismiss: () -> Unit) {
+internal fun QueueHeader(count: Int, onDismiss: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -162,11 +164,19 @@ private fun QueueHeader(count: Int, onDismiss: () -> Unit) {
     }
 }
 
+/**
+ * Takes the two things it does to the queue rather than the connection they live on.
+ *
+ * Same reason as MiniPlayerBar: holding a PlaybackConnection made this impossible to
+ * render outside the running app, for two calls.
+ */
 @Composable
-private fun QueueList(
+internal fun QueueList(
     reorder: QueueReorderState,
     currentIndex: Int,
-    playback: com.deox9.musicplayer.player.PlaybackConnection,
+    onPlayIndex: (Int) -> Unit,
+    onRemoveIndex: (Int) -> Unit,
+    onMoveItem: (Int, Int) -> Unit,
 ) {
     val rowHeightPx = with(LocalDensity.current) { ROW_HEIGHT.toPx() }
 
@@ -179,15 +189,15 @@ private fun QueueList(
                 entry = reorder.items[index],
                 isCurrent = index == currentIndex,
                 isDragged = reorder.draggedIndex == index,
-                onPlay = { playback.playQueueIndex(index) },
-                onMoveToTop = { reorder.moveTo(index, 0, playback::moveQueueItem) },
+                onPlay = { onPlayIndex(index) },
+                onMoveToTop = { reorder.moveTo(index, 0, onMoveItem) },
                 onMoveUp = { reorder.swap(index, index - 1) },
                 onMoveDown = { reorder.swap(index, index + 1) },
                 onMoveToBottom = {
-                    reorder.moveTo(index, reorder.items.lastIndex, playback::moveQueueItem)
+                    reorder.moveTo(index, reorder.items.lastIndex, onMoveItem)
                 },
                 onRemove = {
-                    playback.removeQueueIndex(index)
+                    onRemoveIndex(index)
                     reorder.items = reorder.items.toMutableList().apply { removeAt(index) }
                 },
                 dragModifier = Modifier.pointerInput(reorder.items, index) {
@@ -352,7 +362,7 @@ private fun QueueMenuItem(
  * arrives back from the controller a frame or two later, and without it a dragged row
  * snaps back before settling.
  */
-private class QueueReorderState(
+internal class QueueReorderState(
     initial: List<QueueEntry>,
     private val onSwap: (Int, Int) -> Unit,
 ) {
@@ -409,7 +419,7 @@ private class QueueReorderState(
 }
 
 @Composable
-private fun rememberQueueReorderState(
+internal fun rememberQueueReorderState(
     queue: List<QueueEntry>,
     onSwap: (Int, Int) -> Unit,
 ): QueueReorderState {

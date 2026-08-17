@@ -21,7 +21,7 @@ Last verified against the code on 2026-08-17.
 
 | Item | Notes |
 | --- | --- |
-| Wider screenshot coverage | Twenty reference images cover the player's bar and rating row and the library's lists, detail and empty states. The settings sheet, the queue sidebar and the web screen have none. |
+| Web screen screenshots | The queue sidebar and the settings sheet's controls are covered now. The web screen is not: it is a WebView with an overlay, and Robolectric cannot render a WebView — only the ad-filter overlay could be pinned, and that lives in the app module's `full` flavour, which has no screenshot setup. |
 | Seeded large library | A generated 30k-track library to test scanning and scrolling against. The real device library is ~150 tracks. |
 
 ## Waiting on the repository owner

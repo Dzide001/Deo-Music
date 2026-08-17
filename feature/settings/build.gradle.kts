@@ -5,6 +5,9 @@ plugins {
 }
 
 android {
+    // Robolectric renders real Material3 components, which look up their own string
+    // resources; without this a Switch or a text field throws NotFoundException.
+    testOptions.unitTests.isIncludeAndroidResources = true
     namespace = "com.deox9.musicplayer.feature.settings"
 }
 
@@ -24,4 +27,18 @@ dependencies {
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
     debugImplementation(libs.compose.ui.test.manifest)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    testImplementation(libs.roborazzi.junit.rule)
+}
+
+/** Screenshot tests verify by default; record with `-Precord`. See feature/player. */
+tasks.withType<Test>().configureEach {
+    val recording = providers.gradleProperty("record").isPresent
+    systemProperty("roborazzi.test.record", recording)
+    systemProperty("roborazzi.test.verify", !recording)
 }

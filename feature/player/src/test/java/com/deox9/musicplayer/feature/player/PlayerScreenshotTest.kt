@@ -7,6 +7,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.remember
 import com.deox9.musicplayer.player.PlaybackState
 import com.deox9.musicplayer.player.QueueEntry
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -144,6 +145,38 @@ class PlayerScreenshotTest {
     fun `lyrics timing controls nudged`() {
         capture("lyrics-timing-nudged") {
             LyricsTimingControls(offsetMs = 750L, onNudge = {}, onReset = {})
+        }
+    }
+
+    @Test
+    fun `queue header`() {
+        capture("queue-header") { QueueHeader(count = 12, onDismiss = {}) }
+    }
+
+    /** An empty queue still draws its header, and says nothing rather than "0". */
+    @Test
+    fun `queue header when empty`() {
+        capture("queue-header-empty") { QueueHeader(count = 0, onDismiss = {}) }
+    }
+
+    @Test
+    fun `queue list`() {
+        capture("queue-list") {
+            val entries = listOf(
+                QueueEntry("content://1", "Peace Be Still", "Sunmisola Agbebi"),
+                QueueEntry("content://2", "Anybody", "Burna Boy"),
+                QueueEntry("content://3", "Terminator", "Asake"),
+            )
+            QueueList(
+                reorder = rememberQueueReorderState(entries) { _, _ -> },
+                // The second row is playing, which is the whole point of the list
+                // having a current index — it is the only visual difference between
+                // a queue and any other track list.
+                currentIndex = 1,
+                onPlayIndex = {},
+                onRemoveIndex = {},
+                onMoveItem = { _, _ -> },
+            )
         }
     }
 }

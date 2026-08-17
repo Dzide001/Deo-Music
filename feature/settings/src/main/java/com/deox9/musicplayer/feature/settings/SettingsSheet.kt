@@ -247,7 +247,10 @@ private fun LibraryAndAppearanceSection(
         onCheckedChange = viewModel::setSuggestionsEnabled
     )
     Spacer(modifier = Modifier.height(8.dp))
-    ThemeModeRow(settings = settings, viewModel = viewModel)
+    ThemeModeRow(
+        selected = themeModeFrom(settings.themeMode, settings.darkThemeEnabled),
+        onSelect = viewModel::setThemeMode,
+    )
     Spacer(modifier = Modifier.height(8.dp))
     SettingToggleRow(
         title = "Colour from wallpaper and artwork",
@@ -267,14 +270,18 @@ private fun LibraryAndAppearanceSection(
  *
  * Replaces the old "Prefer dark theme" switch, which could not express "follow the
  * system" — the app stayed on whatever was last chosen regardless of the device.
+ *
+ * Takes the choice and a callback rather than the settings object and a view model.
+ * The three-way control is the most visually distinctive thing in the sheet and the
+ * easiest to break silently, and it could not be rendered outside the app while it
+ * reached for a view model to read one value and write it back.
  */
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun ThemeModeRow(
-    settings: AppSettings,
-    viewModel: SettingsViewModel,
+internal fun ThemeModeRow(
+    selected: ThemeMode,
+    onSelect: (ThemeMode) -> Unit,
 ) {
-    val selected = themeModeFrom(settings.themeMode, settings.darkThemeEnabled)
     val options = listOf(ThemeMode.System to "System", ThemeMode.Light to "Light", ThemeMode.Dark to "Dark")
 
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -284,7 +291,7 @@ private fun ThemeModeRow(
             options.forEachIndexed { index, (mode, label) ->
                 SegmentedButton(
                     selected = mode == selected,
-                    onClick = { viewModel.setThemeMode(mode) },
+                    onClick = { onSelect(mode) },
                     shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
                 ) {
                     Text(label)
