@@ -89,13 +89,20 @@ fun recommendTracks(
  * Rotating rather than reshuffling, so the ranking is still a ranking: pressing
  * Refresh walks further down the same ordered list instead of scrambling it, and
  * pressing it enough times comes back round to the top.
+ *
+ * A press moves by [ROTATION_STRIDE] rather than by one, because moving by one is
+ * not a refresh anyone can see. These rows are tall - artwork, title, artist, the
+ * reason line and two buttons - so only three or four fit a phone screen, and
+ * shifting by one leaves two thirds of what was already there. A stride wider than
+ * the screen means every press replaces the visible set outright.
  */
 private fun rotated(
     scored: List<SuggestedRecommendation>,
     rotation: Int,
 ): List<SuggestedRecommendation> {
     if (scored.isEmpty()) return scored
-    val shift = rotation % scored.size
+    // Through Long, because the stride multiplies a tap count that only ever grows.
+    val shift = ((rotation.toLong() * ROTATION_STRIDE) % scored.size).toInt()
     return if (shift == 0) scored else scored.drop(shift) + scored.take(shift)
 }
 
@@ -192,6 +199,9 @@ private fun score(
 private val SONG_LENGTH_MS = 150_000L..360_000L
 
 private const val DEFAULT_LIMIT = 60
+
+/** Wider than a phone screen holds, so one press turns the whole list over. */
+private const val ROTATION_STRIDE = 5
 private const val SAME_ARTIST = 120
 private const val ARTIST_IN_QUEUE = 70
 private const val FAVOURITE = 35

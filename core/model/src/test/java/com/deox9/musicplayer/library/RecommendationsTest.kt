@@ -33,6 +33,15 @@ class RecommendationsTest {
         contentUri = uri,
     )
 
+    private val noFavourites = emptySet<String>()
+
+    private fun seed() = SuggestionSeed()
+
+    private fun signals() = RecommendationSignals()
+
+    private fun uris(result: List<SuggestedRecommendation>) =
+        result.map { it.track.contentUri }
+
     private fun scoreOf(result: List<SuggestedRecommendation>, uri: String) =
         result.first { it.track.contentUri == uri }.score
 
@@ -273,27 +282,55 @@ class RecommendationsTest {
 
     @Test
     fun `refresh walks down the same ranking rather than scrambling it`() {
-        val tracks = (1..4).map { track(uri = "t$it") }
-        val first = recommendTracks(tracks, SuggestionSeed(), RecommendationSignals(), emptySet())
-        val second = recommendTracks(
-            tracks, SuggestionSeed(), RecommendationSignals(), emptySet(), rotation = 1,
-        )
+        val tracks = (1..10).map { track(uri = "t$it") }
+        val first = uris(recommendTracks(tracks, seed(), signals(), noFavourites))
+        val second = uris(recommendTracks(tracks, seed(), signals(), noFavourites, rotation = 1))
 
-        assertEquals(first.size, second.size)
-        assertFalse(first.map { it.track.contentUri } == second.map { it.track.contentUri })
-        assertEquals(first.drop(1).map { it.track.contentUri } + first.first().track.contentUri,
-            second.map { it.track.contentUri })
+        // Rotated by a stride, not reshuffled: the tail is the head that came off.
+        assertEquals(first.drop(5) + first.take(5), second)
+    }
+
+    @Test
+    fun `one refresh replaces everything on screen`() {
+        // The point of the stride. A shift of one would leave most of a screenful
+        // where it was, and reads as the button doing nothing.
+        val tracks = (1..10).map { track(uri = "t$it") }
+        val first = uris(recommendTracks(tracks, seed(), signals(), noFavourites))
+        val second = uris(recommendTracks(tracks, seed(), signals(), noFavourites, rotation = 1))
+
+        val screenful = 4
+        assertTrue(first.take(screenful).intersect(second.take(screenful).toSet()).isEmpty())
     }
 
     @Test
     fun `refreshing all the way round comes back to where it started`() {
-        val tracks = (1..4).map { track(uri = "t$it") }
-        val first = recommendTracks(tracks, SuggestionSeed(), RecommendationSignals(), emptySet())
-        val wrapped = recommendTracks(
-            tracks, SuggestionSeed(), RecommendationSignals(), emptySet(), rotation = 4,
+        val tracks = (1..10).map { track(uri = "t$it") }
+        val first = uris(recommendTracks(tracks, seed(), signals(), noFavourites))
+        val wrapped = uris(recommendTracks(tracks, seed(), signals(), noFavourites, rotation = 2))
+
+        assertEquals(first, wrapped)
+    }
+
+    @Test
+    fun `refreshing a short list stays inside it`() {
+        // The stride is wider than this list, so the shift has to wrap rather than
+        // run off the end.
+        val tracks = (1..3).map { track(uri = "t$it") }
+        val first = uris(recommendTracks(tracks, seed(), signals(), noFavourites))
+        val second = uris(recommendTracks(tracks, seed(), signals(), noFavourites, rotation = 1))
+
+        assertEquals(first.toSet(), second.toSet())
+        assertEquals(3, second.size)
+    }
+
+    @Test
+    fun `a refresh count large enough to overflow an Int still rotates`() {
+        val tracks = (1..10).map { track(uri = "t$it") }
+        val result = recommendTracks(
+            tracks, seed(), signals(), noFavourites, rotation = Int.MAX_VALUE,
         )
 
-        assertEquals(first.map { it.track.contentUri }, wrapped.map { it.track.contentUri })
+        assertEquals(10, result.size)
     }
 
     @Test

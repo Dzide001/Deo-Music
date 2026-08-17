@@ -507,6 +507,18 @@ fun SuggestedScreen(
 
     val tracks by viewModel.tracks.collectAsState()
 
+    // Back to the top on every refresh, or the new order is invisible.
+    //
+    // The rows are keyed by track id, and LazyColumn honours those keys by anchoring
+    // the scroll to whichever item is already on screen — so when the list rotates it
+    // faithfully follows that item down to its new position and the screen looks
+    // unchanged. Scrolling from the click handler loses a race with that anchoring;
+    // an effect keyed on the press runs after the reordered list is laid out, which
+    // is the only point where scrolling to the top sticks.
+    LaunchedEffect(refreshNonce) {
+        if (refreshNonce > 0) listState.scrollToItem(0)
+    }
+
     val recommendations = remember(tracks, session, favourites, recommendationSignals, refreshNonce) {
         recommendTracks(
             tracks = tracks,
