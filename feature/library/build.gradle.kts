@@ -6,6 +6,10 @@ plugins {
 
 android {
     namespace = "com.deox9.musicplayer.feature.library"
+    // Robolectric renders real Material3 components, which look up their own string
+    // resources. Without this the merged resources are absent from the test
+    // classpath and an OutlinedTextField throws Resources$NotFoundException.
+    testOptions.unitTests.isIncludeAndroidResources = true
 }
 
 dependencies {

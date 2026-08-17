@@ -18,6 +18,7 @@ import com.deox9.musicplayer.library.PlaylistInfo
 import com.deox9.musicplayer.library.TrackTally
 import com.deox9.musicplayer.ui.AlbumSortOption
 import com.deox9.musicplayer.ui.CollectionSortOption
+import com.deox9.musicplayer.ui.SongSortOption
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -28,12 +29,19 @@ import org.robolectric.annotation.GraphicsMode
 /**
  * Reference images for the library's lists and the listening statistics screen.
  *
- * Two different reasons these are only possible now. The stats screen reached for a
- * Hilt view model and had to be split into a wrapper and a content composable before
- * it could be drawn at all. The five lists were already written the right way —
- * plain values in, a callback out — and were merely `private`, so nothing outside
- * the file could see them. Both are the same underlying point: a composable that can
- * be handed its data is a composable that can be looked at.
+ * Two different reasons these are possible now. Five screens — the statistics,
+ * suggestions, songs, favourites and search — reached for a Hilt view model and had
+ * to be split into a wrapper that collects state and a content composable that takes
+ * values, before they could be drawn at all. The five collection lists were already
+ * written the right way, plain values in and a callback out, and were merely
+ * `private` so nothing outside the file could see them. Both are the same underlying
+ * point: a composable that can be handed its data is a composable that can be looked
+ * at.
+ *
+ * The empty states are here deliberately, and there are three distinct ones that are
+ * easy to conflate. An empty library says the collection is empty; an empty search
+ * says the filter is; an empty favourites list is an invitation rather than either.
+ * All three are invisible while developing against data that matches.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -201,6 +209,140 @@ class LibraryScreenshotTest {
                 sortOption = AlbumSortOption.Name,
                 listState = rememberLazyListState(),
                 onSelect = {},
+            )
+        }
+    }
+
+    private val songs = listOf(
+        track(1, "Peace Be Still", "Sunmisola Agbebi"),
+        track(2, "Anybody", "Burna Boy"),
+        track(3, "Terminator", "Asake"),
+    )
+
+    @Test
+    fun `songs list`() {
+        capture("songs-list") {
+            SongsList(
+                tracks = songs,
+                favourites = setOf(songs[1].contentUri),
+                searchQuery = "",
+                sortOption = SongSortOption.Title,
+                listState = rememberLazyListState(),
+                onToggleFavourite = {},
+                onPlay = { _, _ -> },
+                onPlayNext = {},
+                onAddToQueue = {},
+            )
+        }
+    }
+
+    /** A library with nothing in it — what a fresh install shows before a scan. */
+    @Test
+    fun `songs list with an empty library`() {
+        capture("songs-list-empty") {
+            SongsList(
+                tracks = emptyList(),
+                favourites = emptySet(),
+                searchQuery = "",
+                sortOption = SongSortOption.Title,
+                listState = rememberLazyListState(),
+                onToggleFavourite = {},
+                onPlay = { _, _ -> },
+                onPlayNext = {},
+                onAddToQueue = {},
+            )
+        }
+    }
+
+    /**
+     * A search matching nothing, which says something different from an empty
+     * library: the filter is the problem, not the collection.
+     */
+    @Test
+    fun `songs list with no matches`() {
+        capture("songs-list-no-matches") {
+            SongsList(
+                tracks = songs,
+                favourites = emptySet(),
+                searchQuery = "zzzz",
+                sortOption = SongSortOption.Title,
+                listState = rememberLazyListState(),
+                onToggleFavourite = {},
+                onPlay = { _, _ -> },
+                onPlayNext = {},
+                onAddToQueue = {},
+            )
+        }
+    }
+
+    @Test
+    fun `favourites list`() {
+        capture("favourites-list") {
+            FavouritesList(
+                tracks = songs,
+                favourites = setOf(songs[0].contentUri, songs[2].contentUri),
+                searchQuery = "",
+                sortOption = SongSortOption.Title,
+                listState = rememberLazyListState(),
+                onToggleFavourite = {},
+                onPlay = { _, _ -> },
+                onPlayNext = {},
+                onAddToQueue = {},
+            )
+        }
+    }
+
+    /** Nothing starred yet. An invitation, not a failure — and worded as one. */
+    @Test
+    fun `favourites list with nothing starred`() {
+        capture("favourites-list-empty") {
+            FavouritesList(
+                tracks = songs,
+                favourites = emptySet(),
+                searchQuery = "",
+                sortOption = SongSortOption.Title,
+                listState = rememberLazyListState(),
+                onToggleFavourite = {},
+                onPlay = { _, _ -> },
+                onPlayNext = {},
+                onAddToQueue = {},
+            )
+        }
+    }
+
+    @Test
+    fun `search with results`() {
+        capture("search-results") {
+            SearchResults(
+                query = "peace",
+                onQueryChange = {},
+                trackResults = listOf(songs[0]),
+                albumResults = listOf(Album(1, "Live at the Sanctuary", "Sunmisola Agbebi", null, 12)),
+                favourites = emptySet(),
+                listState = rememberLazyListState(),
+                onToggleFavourite = {},
+                onPlay = { _, _ -> },
+                onPlayNext = {},
+                onAddToQueue = {},
+            )
+        }
+    }
+
+    /** The state a person hits every time they mistype. */
+    @Test
+    fun `search with no results`() {
+        capture("search-no-results") {
+            SearchResults(
+                query = "zzzz",
+                onQueryChange = {},
+                trackResults = emptyList(),
+                albumResults = emptyList(),
+                favourites = emptySet(),
+                listState = rememberLazyListState(),
+                onToggleFavourite = {},
+                onPlay = { _, _ -> },
+                onPlayNext = {},
+                onAddToQueue = {},
             )
         }
     }

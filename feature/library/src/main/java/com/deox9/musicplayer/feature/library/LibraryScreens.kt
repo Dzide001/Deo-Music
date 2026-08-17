@@ -657,66 +657,19 @@ fun FavouritesScreen(
 
     val tracks by viewModel.tracks.collectAsState()
 
-    val favTracks by produceState(
-        initialValue = emptyList<LocalTrack>(),
-        key1 = tracks,
-        key2 = favourites,
-        key3 = Pair(searchQuery, sortOption)
-    ) {
-        value = withContext(Dispatchers.Default) {
-            val searched = tracks
-                .filter { it.contentUri in favourites }
-                .filter {
-                    if (searchQuery.isBlank()) {
-                        true
-                    } else {
-                        val q = searchQuery.trim().lowercase()
-                        it.title.lowercase().contains(q) ||
-                            it.artist.lowercase().contains(q) ||
-                            it.album.lowercase().contains(q)
-                    }
-                }
-
-            when (sortOption) {
-                SongSortOption.Title -> searched.sortedBy { it.title.lowercase() }
-                SongSortOption.Artist -> searched.sortedBy { it.artist.lowercase() }
-                SongSortOption.Album -> searched.sortedBy { it.album.lowercase() }
-                SongSortOption.Duration -> searched.sortedByDescending { it.durationMs }
-            }
-        }
-    }
-
-    if (favTracks.isEmpty()) {
-        Box(modifier = Modifier.padding(16.dp)) {
-            Text(if (searchQuery.isBlank()) "No favourites yet." else "No favourites match your search.")
-        }
-        return
-    }
-
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize()
-    ) {
-        items(favTracks, key = { it.id }) { track ->
-            LocalTrackRow(
-                track = track,
-                isFavourite = track.contentUri in favourites,
-                onToggleFavourite = {
-                    viewModel.toggleFavourite(track.contentUri)
-                },
-                onClick = {
-                    playback.playFrom(favTracks.map { it.asQueued() }, favTracks.indexOf(track))
-                },
-                onPlayNext = {
-                    playback.playNext(track.contentUri, track.title, track.artist)
-                },
-                onAddToQueue = {
-                    playback.addToQueue(track.contentUri, track.title, track.artist)
-                }
-            )
-            HorizontalDivider()
-        }
-    }
+    FavouritesList(
+        tracks = tracks,
+        favourites = favourites,
+        searchQuery = searchQuery,
+        sortOption = sortOption,
+        listState = listState,
+        onToggleFavourite = viewModel::toggleFavourite,
+        onPlay = { track, ordered ->
+            playback.playFrom(ordered.map { it.asQueued() }, ordered.indexOf(track))
+        },
+        onPlayNext = { playback.playNext(it.contentUri, it.title, it.artist) },
+        onAddToQueue = { playback.addToQueue(it.contentUri, it.title, it.artist) },
+    )
 }
 
 @Composable
@@ -855,6 +808,88 @@ internal fun CollectionTrackListScreen(
     }
 }
 
+/**
+ * The favourites list, which is the songs list narrowed to what has been starred.
+ *
+ * Its own composable rather than a flag on SongsList because the empty states say
+ * different things and both matter: "No favourites yet" is an invitation, while
+ * "No favourites match your search" tells someone their filter is the problem, not
+ * their library.
+ */
+@Composable
+internal fun FavouritesList(
+    tracks: List<LocalTrack>,
+    favourites: Set<String>,
+    searchQuery: String,
+    sortOption: SongSortOption,
+    listState: LazyListState,
+    onToggleFavourite: (String) -> Unit,
+    onPlay: (LocalTrack, List<LocalTrack>) -> Unit,
+    onPlayNext: (LocalTrack) -> Unit,
+    onAddToQueue: (LocalTrack) -> Unit,
+) {
+    val favTracks by produceState(
+        initialValue = emptyList<LocalTrack>(),
+        key1 = tracks,
+        key2 = favourites,
+        key3 = Pair(searchQuery, sortOption)
+    ) {
+        value = withContext(Dispatchers.Default) {
+            val searched = tracks
+                .filter { it.contentUri in favourites }
+                .filter {
+                    if (searchQuery.isBlank()) {
+                        true
+                    } else {
+                        val q = searchQuery.trim().lowercase()
+                        it.title.lowercase().contains(q) ||
+                            it.artist.lowercase().contains(q) ||
+                            it.album.lowercase().contains(q)
+                    }
+                }
+
+            when (sortOption) {
+                SongSortOption.Title -> searched.sortedBy { it.title.lowercase() }
+                SongSortOption.Artist -> searched.sortedBy { it.artist.lowercase() }
+                SongSortOption.Album -> searched.sortedBy { it.album.lowercase() }
+                SongSortOption.Duration -> searched.sortedByDescending { it.durationMs }
+            }
+        }
+    }
+
+    if (favTracks.isEmpty()) {
+        Box(modifier = Modifier.padding(16.dp)) {
+            Text(if (searchQuery.isBlank()) "No favourites yet." else "No favourites match your search.")
+        }
+        return
+    }
+
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize()
+    ) {
+        items(favTracks, key = { it.id }) { track ->
+            LocalTrackRow(
+                track = track,
+                isFavourite = track.contentUri in favourites,
+                onToggleFavourite = {
+                    onToggleFavourite(track.contentUri)
+                },
+                onClick = {
+                    onPlay(track, favTracks)
+                },
+                onPlayNext = {
+                    onPlayNext(track)
+                },
+                onAddToQueue = {
+                    onAddToQueue(track)
+                }
+            )
+            HorizontalDivider()
+        }
+    }
+}
+
 @Composable
 fun LibraryScreen(
     viewModel: LibraryViewModel = hiltViewModel(),
@@ -914,6 +949,45 @@ fun LibraryScreen(
         return
     }
 
+    SongsList(
+        tracks = tracks,
+        favourites = favourites,
+        searchQuery = searchQuery,
+        sortOption = sortOption,
+        listState = listState,
+        onToggleFavourite = viewModel::toggleFavourite,
+        onPlay = { track, ordered ->
+            playback.playFrom(ordered.map { it.asQueued() }, ordered.indexOf(track))
+        },
+        onPlayNext = { playback.playNext(it.contentUri, it.title, it.artist) },
+        onAddToQueue = { playback.addToQueue(it.contentUri, it.title, it.artist) },
+    )
+}
+
+/**
+ * The songs list: filter, sort, empty states, rows and the fast-scroll rail.
+ *
+ * Split from the screen above, which keeps the parts that genuinely need an app —
+ * the audio permission and the scan it triggers. What is left here is a pure
+ * function of its arguments, which is what lets it be rendered and looked at.
+ *
+ * The filtering stays on this side deliberately. Both empty states — a library with
+ * nothing in it, and a search that matches nothing — are reachable only by filtering,
+ * and they are exactly the states worth pinning: they say different things and are
+ * easy to break while working on the list that has songs in it.
+ */
+@Composable
+internal fun SongsList(
+    tracks: List<LocalTrack>,
+    favourites: Set<String>,
+    searchQuery: String,
+    sortOption: SongSortOption,
+    listState: LazyListState,
+    onToggleFavourite: (String) -> Unit,
+    onPlay: (LocalTrack, List<LocalTrack>) -> Unit,
+    onPlayNext: (LocalTrack) -> Unit,
+    onAddToQueue: (LocalTrack) -> Unit,
+) {
     val filteredTracks by produceState(
         initialValue = emptyList<LocalTrack>(),
         key1 = tracks,
@@ -964,18 +1038,10 @@ fun LibraryScreen(
                 LocalTrackRow(
                     track = track,
                     isFavourite = track.contentUri in favourites,
-                    onToggleFavourite = {
-                        viewModel.toggleFavourite(track.contentUri)
-                    },
-                    onClick = {
-                        playback.playFrom(filteredTracks.map { it.asQueued() }, filteredTracks.indexOf(track))
-                    },
-                    onPlayNext = {
-                        playback.playNext(track.contentUri, track.title, track.artist)
-                    },
-                    onAddToQueue = {
-                        playback.addToQueue(track.contentUri, track.title, track.artist)
-                    }
+                    onToggleFavourite = { onToggleFavourite(track.contentUri) },
+                    onClick = { onPlay(track, filteredTracks) },
+                    onPlayNext = { onPlayNext(track) },
+                    onAddToQueue = { onAddToQueue(track) }
                 )
                 HorizontalDivider()
             }
@@ -1468,41 +1534,31 @@ private fun AlbumDetailScreen(
  * a track. Tracks come from the FTS index; albums are filtered on the already-loaded
  * list, which is cheap and keeps one query path rather than two.
  */
+/**
+ * The search field and whatever it found.
+ *
+ * The query is hoisted out so this draws whatever it is given: an empty field, a
+ * term with results, or a term with none. That last one is the state worth pinning —
+ * it is what someone sees every time they mistype, and it is invisible while
+ * developing against a query that matches.
+ */
 @Composable
-fun SearchScreen(
-    viewModel: LibraryViewModel = hiltViewModel(),
+internal fun SearchResults(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    trackResults: List<LocalTrack>,
+    albumResults: List<Album>,
+    favourites: Set<String>,
     listState: LazyListState,
+    onToggleFavourite: (String) -> Unit,
+    onPlay: (LocalTrack, List<LocalTrack>) -> Unit,
+    onPlayNext: (LocalTrack) -> Unit,
+    onAddToQueue: (LocalTrack) -> Unit,
 ) {
-    val playback = viewModel.playback
-    val favourites by viewModel.favourites.collectAsState()
-    val albums by viewModel.albums.collectAsState()
-
-    var query by rememberSaveable { mutableStateOf("") }
-    var trackResults by remember { mutableStateOf<List<LocalTrack>>(emptyList()) }
-
-    // Debounced so a query does not hit FTS on every keystroke.
-    LaunchedEffect(query) {
-        if (query.isBlank()) {
-            trackResults = emptyList()
-            return@LaunchedEffect
-        }
-        delay(SEARCH_DEBOUNCE_MS)
-        trackResults = viewModel.searchTracks(query)
-    }
-
-    val albumResults = remember(albums, query) {
-        if (query.isBlank()) {
-            emptyList()
-        } else {
-            val term = query.trim().lowercase()
-            albums.filter { it.title.lowercase().contains(term) || it.artist.lowercase().contains(term) }
-        }
-    }
-
     Column(modifier = Modifier.fillMaxSize()) {
         OutlinedTextField(
             value = query,
-            onValueChange = { query = it },
+            onValueChange = onQueryChange,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -1544,16 +1600,63 @@ fun SearchScreen(
                     LocalTrackRow(
                         track = track,
                         isFavourite = track.contentUri in favourites,
-                        onToggleFavourite = { viewModel.toggleFavourite(track.contentUri) },
-                        onClick = { playback.playFrom(trackResults.map { it.asQueued() }, trackResults.indexOf(track)) },
-                        onPlayNext = { playback.playNext(track.contentUri, track.title, track.artist) },
-                        onAddToQueue = { playback.addToQueue(track.contentUri, track.title, track.artist) },
+                        onToggleFavourite = { onToggleFavourite(track.contentUri) },
+                        onClick = { onPlay(track, trackResults) },
+                        onPlayNext = { onPlayNext(track) },
+                        onAddToQueue = { onAddToQueue(track) },
                     )
                     HorizontalDivider()
                 }
             }
         }
     }
+}
+
+@Composable
+fun SearchScreen(
+    viewModel: LibraryViewModel = hiltViewModel(),
+    listState: LazyListState,
+) {
+    val playback = viewModel.playback
+    val favourites by viewModel.favourites.collectAsState()
+    val albums by viewModel.albums.collectAsState()
+
+    var query by rememberSaveable { mutableStateOf("") }
+    var trackResults by remember { mutableStateOf<List<LocalTrack>>(emptyList()) }
+
+    // Debounced so a query does not hit FTS on every keystroke.
+    LaunchedEffect(query) {
+        if (query.isBlank()) {
+            trackResults = emptyList()
+            return@LaunchedEffect
+        }
+        delay(SEARCH_DEBOUNCE_MS)
+        trackResults = viewModel.searchTracks(query)
+    }
+
+    val albumResults = remember(albums, query) {
+        if (query.isBlank()) {
+            emptyList()
+        } else {
+            val term = query.trim().lowercase()
+            albums.filter { it.title.lowercase().contains(term) || it.artist.lowercase().contains(term) }
+        }
+    }
+
+    SearchResults(
+        query = query,
+        onQueryChange = { query = it },
+        trackResults = trackResults,
+        albumResults = albumResults,
+        favourites = favourites,
+        listState = listState,
+        onToggleFavourite = viewModel::toggleFavourite,
+        onPlay = { track, ordered ->
+            playback.playFrom(ordered.map { it.asQueued() }, ordered.indexOf(track))
+        },
+        onPlayNext = { playback.playNext(it.contentUri, it.title, it.artist) },
+        onAddToQueue = { playback.addToQueue(it.contentUri, it.title, it.artist) },
+    )
 }
 
 /**
