@@ -60,9 +60,11 @@ import com.deox9.musicplayer.audio.OutputProfiles
 import com.deox9.musicplayer.audio.OutputRoute
 import com.deox9.musicplayer.library.Bookmark
 import com.deox9.musicplayer.library.PlaylistInfo
+import com.deox9.musicplayer.lyrics.LrcParser
 import com.deox9.musicplayer.lyrics.LyricsData
 import com.deox9.musicplayer.player.PlaybackState
 import com.deox9.musicplayer.player.SleepTimer
+import com.deox9.musicplayer.player.storage.LyricsOffsetsRepository
 import com.deox9.musicplayer.settings.AppSettingsRepository
 import com.deox9.musicplayer.ui.formatDuration
 import kotlinx.coroutines.Dispatchers
@@ -389,6 +391,8 @@ private fun LyricsDialog(
     var lyrics by remember { mutableStateOf<LyricsData?>(null) }
     var loading by remember { mutableStateOf(session != null) }
 
+    val offsetMs by viewModel.lyricsOffsetMs.collectAsState()
+
     LaunchedEffect(session?.uri) {
         val uri = session?.uri
         if (uri.isNullOrBlank()) {
@@ -396,6 +400,7 @@ private fun LyricsDialog(
             loading = false
             return@LaunchedEffect
         }
+        viewModel.loadLyricsOffset(uri)
         loading = true
         lyrics = viewModel.lyricsFor(
             trackKey = uri,
@@ -414,7 +419,14 @@ private fun LyricsDialog(
             if (session == null) {
                 Text("Start playback to open lyrics.")
             } else {
-                LyricsBody(session = session, lyrics = lyrics, loading = loading)
+                LyricsBody(
+                    session = session,
+                    lyrics = lyrics,
+                    loading = loading,
+                    offsetMs = offsetMs,
+                    onNudge = { viewModel.nudgeLyrics(session.uri, it) },
+                    onReset = { viewModel.resetLyricsOffset(session.uri) },
+                )
             }
         },
         dismissButton = {
@@ -430,8 +442,56 @@ private fun LyricsDialog(
     )
 }
 
+/**
+ * Nudges the lyric timing for this track.
+ *
+ * Only shown for synced lyrics, because there is nothing to move on plain text.
+ *
+ * Worded as what the listener sees rather than as a signed number: someone whose
+ * lyrics run ahead of the music wants "later", and should not have to work out that
+ * this means a positive offset. The millisecond value is still shown, because
+ * without it there is no way to tell a nudge landed at all.
+ */
 @Composable
-private fun LyricsBody(session: PlaybackState, lyrics: LyricsData?, loading: Boolean) {
+internal fun LyricsTimingControls(
+    offsetMs: Long,
+    onNudge: (Long) -> Unit,
+    onReset: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TextButton(onClick = { onNudge(-LyricsOffsetsRepository.STEP_MS) }) { Text("Earlier") }
+        TextButton(onClick = { onNudge(LyricsOffsetsRepository.STEP_MS) }) { Text("Later") }
+        Text(
+            text = when {
+                offsetMs == 0L -> "In time"
+                offsetMs > 0 -> "+${offsetMs / MILLIS_PER_SECOND.toDouble()}s"
+                else -> "${offsetMs / MILLIS_PER_SECOND.toDouble()}s"
+            },
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        if (offsetMs != 0L) {
+            TextButton(onClick = onReset) { Text("Reset") }
+        }
+    }
+}
+
+private const val MILLIS_PER_SECOND = 1000L
+
+@Composable
+internal fun LyricsBody(
+    session: PlaybackState,
+    lyrics: LyricsData?,
+    loading: Boolean,
+    offsetMs: Long,
+    onNudge: (Long) -> Unit,
+    onReset: () -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -450,13 +510,17 @@ private fun LyricsBody(session: PlaybackState, lyrics: LyricsData?, loading: Boo
         when {
             loading -> Text("Fetching lyrics…")
             lyrics != null && lyrics.syncedLines.isNotEmpty() -> {
-                val active = currentSyncedLyricLine(lyrics.syncedLines, session.positionMs)
+                // Shifted here rather than at the source, so a nudge is instant and
+                // does not re-fetch anything.
+                val shifted = LrcParser.shiftBy(lyrics.syncedLines, offsetMs)
+                val active = currentSyncedLyricLine(shifted, session.positionMs)
                 Text(
                     text = "Synced lyrics${if (lyrics.cached) " (cached)" else ""}",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )
-                lyrics.syncedLines.forEach { line ->
+                LyricsTimingControls(offsetMs = offsetMs, onNudge = onNudge, onReset = onReset)
+                shifted.forEach { line ->
                     val isActive = line.text == active
                     Text(
                         text = line.text,

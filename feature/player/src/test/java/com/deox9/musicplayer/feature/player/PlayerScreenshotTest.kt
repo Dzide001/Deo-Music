@@ -128,4 +128,22 @@ class PlayerScreenshotTest {
             )
         }
     }
+
+    @Test
+    fun `lyrics timing controls in time`() {
+        capture("lyrics-timing-in-time") {
+            LyricsTimingControls(offsetMs = 0L, onNudge = {}, onReset = {})
+        }
+    }
+
+    /**
+     * Nudged late. Reset only appears once there is something to reset, so this is
+     * a different layout rather than the same one with a number changed.
+     */
+    @Test
+    fun `lyrics timing controls nudged`() {
+        capture("lyrics-timing-nudged") {
+            LyricsTimingControls(offsetMs = 750L, onNudge = {}, onReset = {})
+        }
+    }
 }

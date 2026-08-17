@@ -21,7 +21,6 @@ Last verified against the code on 2026-08-17.
 
 | Item | Notes |
 | --- | --- |
-| Lyrics offset control | The parser handles LRC timings; there is no UI to nudge them when a file's timings are consistently early or late. |
 | Renovate | Dependency updates are manual, and the pinned versions in the original planning docs were wrong often enough to matter. |
 | Wider screenshot coverage | Twenty reference images cover the player's bar and rating row and the library's lists, detail and empty states. The settings sheet, the queue sidebar and the web screen have none. |
 | Seeded large library | A generated 30k-track library to test scanning and scrolling against. The real device library is ~150 tracks. |
@@ -33,6 +32,7 @@ input this machine does not have. They are not known-broken; they are unproven.
 
 | Item | What would prove it |
 | --- | --- |
+| Lyrics timing nudge | A track with embedded synced lyrics. The controls only appear for synced lyrics, and nothing in the test device's library has any, so the buttons have never been pressed on hardware. The shift itself is unit-tested and the controls have reference images. |
 | Keyboard shortcuts | A physical keyboard. |
 | Foldable hinge layout | A foldable, or a hinge-emulating device profile. |
 | Resume after a phone call | A real incoming call. `resumeAfterInterruption` is wired through `onPlayWhenReadyChanged`, and audio-focus loss is distinguishable from a user pause, but the call path itself is untested. |

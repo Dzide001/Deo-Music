@@ -27,6 +27,7 @@ import com.deox9.musicplayer.player.SavedQueueTrack
 import com.deox9.musicplayer.player.SavedQueues
 import com.deox9.musicplayer.player.SignalChainReporter
 import com.deox9.musicplayer.player.SleepTimer
+import com.deox9.musicplayer.player.storage.LyricsOffsetsRepository
 import com.deox9.musicplayer.player.storage.SavedQueuesRepository
 import com.deox9.musicplayer.scanner.RatingWriter
 import com.deox9.musicplayer.settings.AppSettings
@@ -208,6 +209,35 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
+     * The listener's own correction for this track's lyrics, in milliseconds.
+     *
+     * Kept separate from the lyrics themselves so changing it does not re-fetch
+     * them: nudging the timing should be instant, and a round trip to the network to
+     * move a line by a quarter second would be absurd.
+     */
+    private val _lyricsOffsetMs = MutableStateFlow(0L)
+    val lyricsOffsetMs: StateFlow<Long> = _lyricsOffsetMs.asStateFlow()
+
+    fun loadLyricsOffset(trackUri: String) {
+        viewModelScope.launch {
+            _lyricsOffsetMs.value = playerTools.lyricsOffsets.offsetFor(trackUri)
+        }
+    }
+
+    fun nudgeLyrics(trackUri: String, deltaMs: Long) {
+        if (trackUri.isBlank()) return
+        val next = (_lyricsOffsetMs.value + deltaMs)
+            .coerceIn(-LyricsOffsetsRepository.MAX_OFFSET_MS, LyricsOffsetsRepository.MAX_OFFSET_MS)
+        _lyricsOffsetMs.value = next
+        viewModelScope.launch { playerTools.lyricsOffsets.setOffset(trackUri, next) }
+    }
+
+    fun resetLyricsOffset(trackUri: String) {
+        _lyricsOffsetMs.value = 0L
+        viewModelScope.launch { playerTools.lyricsOffsets.setOffset(trackUri, 0L) }
+    }
+
+    /**
      * Steps to the next shuffle mode.
      *
      * A cycle on the existing button rather than a new control: four modes do not
@@ -358,4 +388,12 @@ class PlayerTools @Inject constructor(
     val outputRoute: OutputRouteMonitor,
     val sleepTimer: SleepTimer,
     val abLoop: AbLoop,
+    /**
+     * Per-track lyric timing corrections.
+     *
+     * Here rather than as a tenth constructor argument on the view model. This bundle
+     * exists for exactly this — the small, player-adjacent pieces of state that would
+     * otherwise each claim a parameter — and a lyric offset is one of them.
+     */
+    val lyricsOffsets: LyricsOffsetsRepository,
 )

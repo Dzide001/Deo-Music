@@ -73,6 +73,19 @@ object LrcParser {
 
     private val TIMESTAMP = Regex("""\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?]""")
 
+    /**
+     * The file's own correction, in milliseconds.
+     *
+     * LRC files may carry `[offset:+500]`, written by whoever timed them, and the
+     * convention is that a positive value means the lyrics should appear *earlier*.
+     * Ignoring it leaves the app visibly wrong on files that already say how wrong
+     * they are.
+     */
+    private val OFFSET_TAG = Regex("""\[offset:\s*([+-]?\d+)\s*]""", RegexOption.IGNORE_CASE)
+
+    fun offsetMsIn(raw: String): Long =
+        OFFSET_TAG.find(raw)?.groupValues?.get(1)?.toLongOrNull()?.let { -it } ?: 0L
+
     fun parse(raw: String): List<SyncedLyricLine> {
         if (raw.isBlank()) return emptyList()
 
@@ -108,7 +121,7 @@ object LrcParser {
                 lines += SyncedLyricLine(timestampMs(minutes, seconds, fraction), text)
             }
         }
-        return lines.sortedBy { it.timeMs }
+        return shiftBy(lines.sortedBy { it.timeMs }, offsetMsIn(raw))
     }
 
     /**
@@ -128,5 +141,20 @@ object LrcParser {
         return (minutes.toLongOrNull() ?: 0L) * 60_000L +
             (seconds.toLongOrNull() ?: 0L) * 1_000L +
             fractionMs
+    }
+
+    /**
+     * Moves every line by [offsetMs], keeping them in order and never negative.
+     *
+     * Positive delays the lyrics, negative brings them forward — stated here because
+     * the sign is the one thing nobody can guess, and the UI wording depends on it.
+     *
+     * Lines pushed before the start of the track clamp to zero rather than being
+     * dropped: a listener nudging a whole file forward still wants the first line,
+     * and losing it silently would look like the lyrics were incomplete.
+     */
+    fun shiftBy(lines: List<SyncedLyricLine>, offsetMs: Long): List<SyncedLyricLine> {
+        if (offsetMs == 0L || lines.isEmpty()) return lines
+        return lines.map { it.copy(timeMs = (it.timeMs + offsetMs).coerceAtLeast(0L)) }
     }
 }
