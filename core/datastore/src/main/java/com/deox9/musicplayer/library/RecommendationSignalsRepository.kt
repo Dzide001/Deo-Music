@@ -13,14 +13,6 @@ import org.json.JSONObject
 
 private val Context.recommendationSignalsDataStore: DataStore<Preferences> by preferencesDataStore(name = "recommendation_signals")
 
-data class RecommendationSignals(
-    val artistPlayCounts: Map<String, Int> = emptyMap(),
-    val trackPlayCounts: Map<String, Int> = emptyMap(),
-    val trackSkipCounts: Map<String, Int> = emptyMap(),
-    val likedTrackUris: Set<String> = emptySet(),
-    val hiddenTrackUris: Set<String> = emptySet()
-)
-
 class RecommendationSignalsRepository(private val context: Context) {
 
     fun observe(): Flow<RecommendationSignals> {

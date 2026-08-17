@@ -2,8 +2,6 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
-    <ID>CyclomaticComplexMethod:LibraryScreens.kt$@Composable fun SuggestedScreen( viewModel: LibraryViewModel = hiltViewModel(), listState: LazyListState )</ID>
-    <ID>LongMethod:LibraryScreens.kt$@Composable fun SuggestedScreen( viewModel: LibraryViewModel = hiltViewModel(), listState: LazyListState )</ID>
     <ID>LongMethod:MainActivity.kt$@Composable private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel())</ID>
   </CurrentIssues>
 </SmellBaseline>

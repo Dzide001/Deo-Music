@@ -71,6 +71,8 @@ import com.deox9.musicplayer.library.FolderInfo
 import com.deox9.musicplayer.library.GenreInfo
 import com.deox9.musicplayer.library.LocalTrack
 import com.deox9.musicplayer.library.PlaylistInfo
+import com.deox9.musicplayer.library.SuggestionSeed
+import com.deox9.musicplayer.library.recommendTracks
 import com.deox9.musicplayer.player.QueuedTrack
 import com.deox9.musicplayer.scanner.LibraryScanWorker
 import com.deox9.musicplayer.ui.AlbumSortOption
@@ -505,111 +507,19 @@ fun SuggestedScreen(
 
     val tracks by viewModel.tracks.collectAsState()
 
-    data class SuggestedRecommendation(
-        val track: LocalTrack,
-        val reason: String,
-        val score: Int
-    )
-
     val recommendations = remember(tracks, session, favourites, recommendationSignals, refreshNonce) {
-        if (tracks.isEmpty()) {
-            emptyList()
-        } else {
-            val currentUri = session?.uri.orEmpty()
-            val currentArtist = session?.artist.orEmpty().lowercase()
-            val recentArtists = session?.queue
-                ?.map { it.artist.lowercase() }
-                ?.filter { it.isNotBlank() }
-                ?.distinct()
-                .orEmpty()
-
-            val scored = tracks
-                .asSequence()
-                .filter { it.contentUri != currentUri }
-                .filter { it.contentUri !in recommendationSignals.hiddenTrackUris }
-                .map { track ->
-                    val artistLower = track.artist.lowercase()
-                    val titleLower = track.title.lowercase()
-                    val artistPlayCount = recommendationSignals.artistPlayCounts[artistLower] ?: 0
-                    val trackPlayCount = recommendationSignals.trackPlayCounts[track.contentUri] ?: 0
-                    val trackSkipCount = recommendationSignals.trackSkipCounts[track.contentUri] ?: 0
-
-                    var score = 0
-                    val reasons = mutableListOf<String>()
-
-                    if (artistLower == currentArtist && currentArtist.isNotBlank()) {
-                        score += 120
-                        reasons += "same artist"
-                    } else if (artistLower in recentArtists) {
-                        score += 70
-                        reasons += "artist in your recent queue"
-                    }
-
-                    if (track.contentUri in favourites) {
-                        score += 35
-                        reasons += "you starred this"
-                    }
-
-                    if (track.contentUri in recommendationSignals.likedTrackUris) {
-                        score += 90
-                        reasons += "you liked this recommendation"
-                    }
-
-                    if (artistPlayCount > 0) {
-                        val artistWeight = (artistPlayCount.coerceAtMost(20)) * 4
-                        score += artistWeight
-                        reasons += "frequently played artist"
-                    }
-
-                    if (trackPlayCount > 0) {
-                        val replayWeight = (trackPlayCount.coerceAtMost(10)) * 2
-                        score += replayWeight
-                    }
-
-                    if (trackSkipCount > 0) {
-                        score -= (trackSkipCount.coerceAtMost(10)) * 9
-                        reasons += "you often skip this"
-                    }
-
-                    if (session?.title?.isNotBlank() == true) {
-                        val seedWord = session!!.title
-                            .split(" ")
-                            .firstOrNull()
-                            ?.trim()
-                            ?.lowercase()
-                            .orEmpty()
-                        if (seedWord.length >= 4 && titleLower.contains(seedWord)) {
-                            score += 20
-                            reasons += "title similarity"
-                        }
-                    }
-
-                    if (track.durationMs in 150_000L..360_000L) {
-                        score += 8
-                    }
-
-                    if (score == 0) {
-                        score = 1
-                        reasons += "library discovery"
-                    }
-
-                    SuggestedRecommendation(
-                        track = track,
-                        reason = reasons.firstOrNull() ?: "good match for your queue",
-                        score = score
-                    )
-                }
-                .sortedByDescending { it.score }
-                .take(60)
-                .toList()
-
-            if (scored.isEmpty()) {
-                scored
-            } else {
-                val shift = refreshNonce % scored.size
-                if (shift == 0) scored else (scored.drop(shift) + scored.take(shift))
-            }
-        }
+        recommendTracks(
+            tracks = tracks,
+            seed = SuggestionSeed(
+                uri = session?.uri.orEmpty(),
+                artist = session?.artist.orEmpty(),
+                title = session?.title.orEmpty(),
+                queueArtists = session?.queue?.map { it.artist }.orEmpty(),
+            ),
+            signals = recommendationSignals,
+            favourites = favourites,
+            rotation = refreshNonce,
+        )
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
