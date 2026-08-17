@@ -98,6 +98,7 @@ import com.deox9.musicplayer.feature.library.FavouritesScreen
 import com.deox9.musicplayer.feature.library.FoldersScreen
 import com.deox9.musicplayer.feature.library.GenresScreen
 import com.deox9.musicplayer.feature.library.LibraryScreen
+import com.deox9.musicplayer.feature.library.ListeningStatsScreen
 import com.deox9.musicplayer.feature.library.PlaylistsScreen
 import com.deox9.musicplayer.feature.library.SearchScreen
 import com.deox9.musicplayer.feature.library.SuggestedScreen
@@ -235,8 +236,8 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
     var localTab by rememberSaveable { mutableStateOf(LibraryTab.Songs) }
     val search = rememberSearchFields()
     val sortMenu = rememberSortMenu()
-    var showLicenses by rememberSaveable { mutableStateOf(false) }
-    val sheets = rememberAppSheets(onShowLicenses = { showLicenses = true })
+    var fullScreenRoute by rememberSaveable { mutableStateOf<FullScreenRoute?>(null) }
+    val sheets = rememberAppSheets(onOpenRoute = { fullScreenRoute = it })
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
     // Not rememberSaveable: the tracker's whole job is telling a queue the listener
     // just chose from one restored on launch, and restoring its state across process
@@ -294,15 +295,8 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
         }
     }
 
-    // A separate full-screen route rather than another branch inside the Scaffold
-    // below: the licenses list needs its own scrolling app bar and has nothing in
-    // common with the mini player / now-playing layout the Scaffold already juggles.
-    if (showLicenses) {
-        BackHandler { showLicenses = false }
-        OpenSourceLicensesScreen(
-            onBack = { showLicenses = false },
-            aboutLibrariesRawResId = R.raw.aboutlibraries
-        )
+    fullScreenRoute?.let { route ->
+        FullScreenDestination(route, onBack = { fullScreenRoute = null })
         return
     }
 
@@ -379,6 +373,27 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
                 onWebViewReady = { webPlaybackView = it },
             )
         }
+    }
+}
+
+/**
+ * A screen that takes over the whole window rather than sitting inside the Scaffold.
+ *
+ * These need their own scrolling app bar and have nothing in common with the mini
+ * player / now-playing layout the Scaffold already juggles, so the screen returns
+ * early for them instead of adding another branch to its content.
+ */
+private enum class FullScreenRoute { Licenses, ListeningStats }
+
+@Composable
+private fun FullScreenDestination(route: FullScreenRoute, onBack: () -> Unit) {
+    BackHandler(onBack = onBack)
+    when (route) {
+        FullScreenRoute.Licenses -> OpenSourceLicensesScreen(
+            onBack = onBack,
+            aboutLibrariesRawResId = R.raw.aboutlibraries,
+        )
+        FullScreenRoute.ListeningStats -> ListeningStatsScreen(onBack = onBack)
     }
 }
 
@@ -604,7 +619,7 @@ private class LibraryNavigation(
  * route rather than a sheet, and the screen returns early for it.
  */
 @Composable
-private fun rememberAppSheets(onShowLicenses: () -> Unit): AppSheets {
+private fun rememberAppSheets(onOpenRoute: (FullScreenRoute) -> Unit): AppSheets {
     var showQueue by rememberSaveable { mutableStateOf(false) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showPerformanceOverlay by rememberSaveable { mutableStateOf(false) }
@@ -616,9 +631,11 @@ private fun rememberAppSheets(onShowLicenses: () -> Unit): AppSheets {
         onDismissQueue = { showQueue = false },
         onOpenSettings = { showSettings = true },
         onDismissSettings = { showSettings = false },
-        onShowLicenses = {
+        // Dismissing the sheet is part of opening a route, not something every
+        // caller has to remember: the sheet is what the route was opened from.
+        onOpenRoute = {
             showSettings = false
-            onShowLicenses()
+            onOpenRoute(it)
         },
         onShowPerfOverlayChange = { showPerformanceOverlay = it },
     )
@@ -633,7 +650,7 @@ private class AppSheets(
     val onDismissQueue: () -> Unit,
     val onOpenSettings: () -> Unit,
     val onDismissSettings: () -> Unit,
-    val onShowLicenses: () -> Unit,
+    val onOpenRoute: (FullScreenRoute) -> Unit,
     val onShowPerfOverlayChange: (Boolean) -> Unit,
 )
 
@@ -720,7 +737,8 @@ private fun AppContent(
     if (sheets.showSettings) {
         SettingsSheet(
             onDismiss = sheets.onDismissSettings,
-            onShowLicenses = sheets.onShowLicenses,
+            onShowLicenses = { sheets.onOpenRoute(FullScreenRoute.Licenses) },
+            onShowListeningStats = { sheets.onOpenRoute(FullScreenRoute.ListeningStats) },
             showPerfOverlay = sheets.showPerfOverlay,
             onShowPerfOverlayChange = sheets.onShowPerfOverlayChange
         )

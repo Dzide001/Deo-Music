@@ -59,6 +59,7 @@ fun SettingsSheet(
     viewModel: SettingsViewModel = hiltViewModel(),
     onDismiss: () -> Unit,
     onShowLicenses: () -> Unit,
+    onShowListeningStats: () -> Unit,
     showPerfOverlay: Boolean,
     onShowPerfOverlayChange: (Boolean) -> Unit
 ) {
@@ -169,6 +170,10 @@ fun SettingsSheet(
 
             BackupSection(viewModel)
 
+            Spacer(modifier = Modifier.height(16.dp))
+            OutlinedButton(onClick = onShowListeningStats) {
+                Text("Your listening")
+            }
             Spacer(modifier = Modifier.height(16.dp))
             OutlinedButton(onClick = onShowLicenses) {
                 Text("Open source licenses")
