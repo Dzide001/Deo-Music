@@ -7,6 +7,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import com.deox9.musicplayer.player.PlaybackState
+import com.deox9.musicplayer.player.QueueEntry
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -26,12 +28,10 @@ import org.robolectric.annotation.GraphicsMode
  * itself: each takes plain values and callbacks rather than reaching for a Hilt view
  * model, which is what lets them draw with no app around them.
  *
- * MiniPlayerBar is deliberately absent, and its absence is the same point made the
- * other way. It looks stateless — it takes a session and two callbacks — but it also
- * takes `viewModel: PlayerViewModel = hiltViewModel()` and reads from it, so
- * rendering it outside an app throws before it draws anything. Making it coverable
- * here means giving it the values it needs instead of the container they live in,
- * which is the next thing worth doing to this file.
+ * MiniPlayerBar is here because it was made coverable. It used to take
+ * `viewModel: PlayerViewModel = hiltViewModel()` for two transport calls, which made
+ * it look stateless while quietly needing a Hilt graph — it threw before drawing
+ * anything. It now takes the two actions instead, and renders like the rest.
  *
  * Robolectric with NATIVE graphics rather than AGP's preview screenshot plugin. That
  * plugin is the tidier tool and it does not work here: on AGP 9.3.1 it registers its
@@ -44,6 +44,17 @@ import org.robolectric.annotation.GraphicsMode
 class PlayerScreenshotTest {
 
     private val accent = Color(0xFFFFC107)
+
+    private val playingSession = PlaybackState(
+        uri = "content://media/external/audio/media/1",
+        title = "Peace Be Still",
+        artist = "Sunmisola Agbebi",
+        album = "Live at the Sanctuary",
+        positionMs = 74_000L,
+        durationMs = 245_000L,
+        isPlaying = true,
+        queue = listOf(QueueEntry("content://1", "Peace Be Still", "Sunmisola Agbebi")),
+    )
 
     /**
      * Renders straight to a bitmap, with no Activity involved.
@@ -85,6 +96,36 @@ class PlayerScreenshotTest {
     fun `rating row when the file could not be written`() {
         capture("rating-write-refused") {
             StarRatingRow(rating = 3, enabled = true, accent = accent, writeRefused = true, onRate = {})
+        }
+    }
+
+    @Test
+    fun `mini player with a track playing`() {
+        capture("mini-player-playing") {
+            MiniPlayerBar(
+                session = playingSession,
+                onExpand = {},
+                onOpenQueue = {},
+                onTogglePlayPause = {},
+                onSkipNext = {},
+            )
+        }
+    }
+
+    /**
+     * Nothing loaded — what the app shows on a cold start, and the state easiest to
+     * break while working only on the one where music is playing.
+     */
+    @Test
+    fun `mini player with nothing playing`() {
+        capture("mini-player-empty") {
+            MiniPlayerBar(
+                session = null,
+                onExpand = {},
+                onOpenQueue = {},
+                onTogglePlayPause = {},
+                onSkipNext = {},
+            )
         }
     }
 }

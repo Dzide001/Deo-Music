@@ -32,7 +32,6 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.deox9.musicplayer.player.PlaybackState
 
 /**
@@ -48,14 +47,23 @@ import com.deox9.musicplayer.player.PlaybackState
  * seek jump are gone from here — they live in the expanded player, which is one tap
  * away, and both were doing more harm crowding the row than good.
  */
+/**
+ * Takes the two transport actions rather than the object they live on.
+ *
+ * It used to take `viewModel: PlayerViewModel = hiltViewModel()` and read
+ * `viewModel.playback` for exactly these two calls. That default made the bar look
+ * stateless — a session and two callbacks — while quietly requiring a Hilt graph, so
+ * it could not be rendered in a screenshot test, or a preview, or anything that is
+ * not the whole running app. Two function references cost the one caller a line each.
+ */
 @Composable
 fun MiniPlayerBar(
-    viewModel: PlayerViewModel = hiltViewModel(),
     session: PlaybackState?,
     onExpand: () -> Unit,
     onOpenQueue: () -> Unit,
+    onTogglePlayPause: () -> Unit,
+    onSkipNext: () -> Unit,
 ) {
-    val playback = viewModel.playback
     val hasTrack = session != null
     val title = session?.title ?: "Nothing playing"
     val artist = session?.artist?.takeIf(String::isNotBlank) ?: "Pick a track from your library"
@@ -109,13 +117,13 @@ fun MiniPlayerBar(
                 IconButton(onClick = onOpenQueue, enabled = hasTrack) {
                     Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = "Queue")
                 }
-                IconButton(onClick = playback::togglePlayPause, enabled = hasTrack) {
+                IconButton(onClick = onTogglePlayPause, enabled = hasTrack) {
                     Icon(
                         imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                         contentDescription = if (isPlaying) "Pause" else "Play",
                     )
                 }
-                IconButton(onClick = playback::skipNext, enabled = hasTrack) {
+                IconButton(onClick = onSkipNext, enabled = hasTrack) {
                     Icon(Icons.Filled.SkipNext, contentDescription = "Next")
                 }
             }

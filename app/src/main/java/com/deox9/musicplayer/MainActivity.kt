@@ -340,6 +340,8 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
                         onSelectDestination = { destination = it },
                         onExpandPlayer = { showNowPlaying = true },
                         onOpenQueue = sheets.onOpenQueue,
+                        onTogglePlayPause = playback::togglePlayPause,
+                        onSkipNext = playback::skipNext,
                     )
                 }
             }
@@ -568,12 +570,16 @@ private fun AppBottomBar(
     onSelectDestination: (RootDestination) -> Unit,
     onExpandPlayer: () -> Unit,
     onOpenQueue: () -> Unit,
+    onTogglePlayPause: () -> Unit,
+    onSkipNext: () -> Unit,
 ) {
     Column(modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
         MiniPlayerBar(
             session = session,
             onExpand = onExpandPlayer,
             onOpenQueue = onOpenQueue,
+            onTogglePlayPause = onTogglePlayPause,
+            onSkipNext = onSkipNext,
         )
         if (showNavigationBar) {
             AppNavigationBar(
