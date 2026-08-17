@@ -292,7 +292,13 @@ class LibraryScreenshotTest {
         }
     }
 
-    /** Nothing starred yet. An invitation, not a failure — and worded as one. */
+    /**
+     * Nothing starred yet. An invitation, not a failure — and worded as one.
+     *
+     * Both this and the populated case were also driven on a phone: double-tapping a
+     * row stars it and it appears here, double-tapping again removes it and the
+     * screen returns to this state.
+     */
     @Test
     fun `favourites list with nothing starred`() {
         capture("favourites-list-empty") {
