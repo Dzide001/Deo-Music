@@ -26,6 +26,7 @@ data class TrackWithNames(
      * to avoid.
      */
     val albumMediaStoreId: Long?,
+    val rating: Int?,
 )
 
 data class AlbumWithArtist(

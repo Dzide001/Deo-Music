@@ -23,7 +23,7 @@ object DatabaseModule {
     fun provideMusicDatabase(
         @ApplicationContext context: Context,
     ): MusicDatabase = Room.databaseBuilder(context, MusicDatabase::class.java, MusicDatabase.NAME)
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
         // No fallbackToDestructiveMigration: a music library is expensive to rebuild
         // and silently wiping it on a schema change is not an acceptable default.
         // Favourites and play history live in here too and are not re-derivable.
@@ -54,6 +54,19 @@ object DatabaseModule {
      * compares the schema it finds against the one it expects and fails the app at
      * startup over a difference as small as a missing ON DELETE clause.
      */
+    /**
+     * Adds tracks.rating.
+     *
+     * Null on every existing row, and left that way rather than defaulted to zero:
+     * null is "this file carries no rating" and zero would be a rating. The next
+     * scan fills in whatever the files actually say.
+     */
+    val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE tracks ADD COLUMN rating INTEGER DEFAULT NULL")
+        }
+    }
+
     val MIGRATION_3_4 = object : Migration(3, 4) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL(

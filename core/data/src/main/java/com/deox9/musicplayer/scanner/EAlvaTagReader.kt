@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.deox9.musicplayer.scanner
 
+import com.deox9.musicplayer.library.Popularimeter
 import ealvatag.audio.AudioFileIO
 import ealvatag.tag.FieldKey
 import ealvatag.tag.Tag
@@ -49,6 +50,10 @@ class EAlvaTagReader @Inject constructor() {
             replayGainTrackPeak = ReplayGainTags.parsePeak(tag.custom(ReplayGainTags.TRACK_PEAK)),
             replayGainAlbumDb = ReplayGainTags.parseGainDb(tag.custom(ReplayGainTags.ALBUM_GAIN)),
             replayGainAlbumPeak = ReplayGainTags.parsePeak(tag.custom(ReplayGainTags.ALBUM_PEAK)),
+            // FieldKey.RATING is POPM on ID3 and the equivalent field elsewhere.
+            // What comes back is not on one scale across formats, which is why
+            // Popularimeter.parse and not toInt.
+            rating = Popularimeter.parse(tag.value(FieldKey.RATING)),
         )
     }
 

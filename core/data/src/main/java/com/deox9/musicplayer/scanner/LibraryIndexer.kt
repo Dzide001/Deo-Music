@@ -143,6 +143,7 @@ class LibraryIndexer @Inject constructor(
             replayGainTrackPeak = replayGainTrackPeak,
             replayGainAlbumDb = replayGainAlbumDb,
             replayGainAlbumPeak = replayGainAlbumPeak,
+            rating = rating,
             dateAddedMs = dateAddedMs,
             dateModifiedMs = dateModifiedMs,
         )

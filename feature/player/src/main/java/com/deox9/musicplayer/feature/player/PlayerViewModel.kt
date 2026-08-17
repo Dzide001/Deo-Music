@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.deox9.musicplayer.feature.player
 
+import android.content.IntentSender
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.deox9.musicplayer.audio.CrossfadeCurve
@@ -27,12 +28,15 @@ import com.deox9.musicplayer.player.SavedQueues
 import com.deox9.musicplayer.player.SignalChainReporter
 import com.deox9.musicplayer.player.SleepTimer
 import com.deox9.musicplayer.player.storage.SavedQueuesRepository
+import com.deox9.musicplayer.scanner.RatingWriter
 import com.deox9.musicplayer.settings.AppSettings
 import com.deox9.musicplayer.settings.AppSettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -113,6 +117,67 @@ class PlayerViewModel @Inject constructor(
 
     fun toggleFavourite(uri: String) {
         viewModelScope.launch { favouritesRepository.toggle(uri) }
+    }
+
+    private val _rating = MutableStateFlow(0)
+
+    /** Stars for the current track, 0 when unrated. */
+    val rating: StateFlow<Int> = _rating.asStateFlow()
+
+    /** Whether the last rating reached the file, so the UI can say if it did not. */
+    private val _ratingWriteRefused = MutableStateFlow(false)
+    val ratingWriteRefused: StateFlow<Boolean> = _ratingWriteRefused.asStateFlow()
+
+    /**
+     * A consent dialog the screen should show, if the system offered one.
+     *
+     * Held here rather than launched here because launching an IntentSender needs an
+     * Activity, and a ViewModel that reaches for one outlives it.
+     */
+    private val _ratingConsent = MutableStateFlow<IntentSender?>(null)
+    val ratingConsent: StateFlow<IntentSender?> = _ratingConsent.asStateFlow()
+
+    /**
+     * Clears the pending request once the dialog is done with.
+     *
+     * A refusal is recorded, not swallowed. Saying nothing after someone declines
+     * leaves them with a filled-in star and no idea the file was left alone, which is
+     * the one outcome where they might reasonably have expected otherwise.
+     */
+    fun consentHandled(granted: Boolean) {
+        _ratingConsent.value = null
+        if (!granted) _ratingWriteRefused.value = true
+    }
+
+    /** Re-runs the write once the user has agreed to it. */
+    fun retryRatingWrite(uri: String) {
+        val stars = _rating.value
+        viewModelScope.launch {
+            val result = libraryRepository.rateTrack(uri, stars)
+            _ratingWriteRefused.value = result !is RatingWriter.Result.Written
+        }
+    }
+
+    fun loadRating(uri: String) {
+        viewModelScope.launch {
+            _rating.value = if (uri.isBlank()) 0 else libraryRepository.ratingFor(uri)
+        }
+    }
+
+    fun rate(uri: String, stars: Int) {
+        if (uri.isBlank()) return
+        viewModelScope.launch {
+            // Shown immediately. The write is to a file that may be a hundred
+            // megabytes on a slow card, and a star that waits for it feels broken.
+            _rating.value = stars
+            when (val result = libraryRepository.rateTrack(uri, stars)) {
+                // The system is willing to ask on our behalf, so ask, rather than
+                // telling someone their file is read-only when it need not be.
+                is RatingWriter.Result.NeedsConsent -> _ratingConsent.value = result.request
+                is RatingWriter.Result.Written -> _ratingWriteRefused.value = false
+                else -> _ratingWriteRefused.value = true
+            }
+        }
     }
 
     suspend fun playlists(): List<PlaylistInfo> = libraryRepository.observePlaylists().first()

@@ -118,7 +118,7 @@ interface LibraryDao {
         SELECT t.id, t.title, t.mediaUri, t.durationMs,
                ar.name AS artistName, al.title AS albumTitle, t.albumId,
                t.trackNumber, t.discNumber, f.path AS folderPath, g.name AS genreName,
-               t.dateAddedMs, al.mediaStoreAlbumId AS albumMediaStoreId
+               t.dateAddedMs, al.mediaStoreAlbumId AS albumMediaStoreId, t.rating
         FROM tracks t
         LEFT JOIN artists ar ON ar.id = t.artistId
         LEFT JOIN albums  al ON al.id = t.albumId
@@ -134,7 +134,7 @@ interface LibraryDao {
         SELECT t.id, t.title, t.mediaUri, t.durationMs,
                ar.name AS artistName, al.title AS albumTitle, t.albumId,
                t.trackNumber, t.discNumber, f.path AS folderPath, g.name AS genreName,
-               t.dateAddedMs, al.mediaStoreAlbumId AS albumMediaStoreId
+               t.dateAddedMs, al.mediaStoreAlbumId AS albumMediaStoreId, t.rating
         FROM tracks t
         LEFT JOIN artists ar ON ar.id = t.artistId
         LEFT JOIN albums  al ON al.id = t.albumId
@@ -190,7 +190,7 @@ interface LibraryDao {
         SELECT t.id, t.title, t.mediaUri, t.durationMs,
                ar.name AS artistName, al.title AS albumTitle, t.albumId,
                t.trackNumber, t.discNumber, f.path AS folderPath, g.name AS genreName,
-               t.dateAddedMs, al.mediaStoreAlbumId AS albumMediaStoreId
+               t.dateAddedMs, al.mediaStoreAlbumId AS albumMediaStoreId, t.rating
         FROM tracks t
         LEFT JOIN artists ar ON ar.id = t.artistId
         LEFT JOIN albums  al ON al.id = t.albumId
@@ -230,7 +230,7 @@ interface LibraryDao {
         SELECT t.id, t.title, t.mediaUri, t.durationMs,
                ar.name AS artistName, al.title AS albumTitle, t.albumId,
                t.trackNumber, t.discNumber, f.path AS folderPath, g.name AS genreName,
-               t.dateAddedMs, al.mediaStoreAlbumId AS albumMediaStoreId
+               t.dateAddedMs, al.mediaStoreAlbumId AS albumMediaStoreId, t.rating
         FROM tracks t
         JOIN tracks_fts ON t.rowid = tracks_fts.rowid
         LEFT JOIN artists ar ON ar.id = t.artistId
@@ -455,6 +455,12 @@ interface LibraryDao {
     suspend fun allBookmarks(): List<BookmarkEntity>
 
     /** The track's own path, for reading tags or embedded art out of the file. */
+    @Query("SELECT rating FROM tracks WHERE mediaUri = :mediaUri LIMIT 1")
+    suspend fun ratingFor(mediaUri: String): Int?
+
+    @Query("UPDATE tracks SET rating = :rating WHERE mediaUri = :mediaUri")
+    suspend fun setRating(mediaUri: String, rating: Int?)
+
     @Query("SELECT filePath FROM tracks WHERE mediaUri = :mediaUri LIMIT 1")
     suspend fun filePathFor(mediaUri: String): String?
 
@@ -498,7 +504,7 @@ interface LibraryDao {
         SELECT t.id, t.title, t.mediaUri, t.durationMs,
                ar.name AS artistName, al.title AS albumTitle, t.albumId,
                t.trackNumber, t.discNumber, f.path AS folderPath, g.name AS genreName,
-               t.dateAddedMs, al.mediaStoreAlbumId AS albumMediaStoreId
+               t.dateAddedMs, al.mediaStoreAlbumId AS albumMediaStoreId, t.rating
         FROM playlist_entries pe
         JOIN tracks t ON t.id = pe.trackId
         LEFT JOIN artists ar ON ar.id = t.artistId

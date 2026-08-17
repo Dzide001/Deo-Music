@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.deox9.musicplayer.feature.player
 
+import android.app.Activity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -33,6 +37,8 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -94,6 +100,8 @@ fun ExpandedNowPlayingScreen(
     val playback = viewModel.playback
     val playerSettings by viewModel.settings.collectAsState()
     val favourites by viewModel.favourites.collectAsState()
+    val rating by viewModel.rating.collectAsState()
+    val ratingWriteRefused by viewModel.ratingWriteRefused.collectAsState()
     val dark = isSystemInDarkTheme()
     val artworkColor by rememberArtworkColor(session?.albumArtUri, dark)
     // Eased rather than switched. Even a correct colour change is a full-screen
@@ -110,6 +118,25 @@ fun ExpandedNowPlayingScreen(
 
     val hasTrack = session != null
     val currentUri = session?.uri.orEmpty()
+
+    // The rating belongs to the track, so it is re-read whenever the track changes
+    // rather than left showing the previous one's stars.
+    LaunchedEffect(currentUri) { viewModel.loadRating(currentUri) }
+
+    // Scoped storage will not let the app write media it did not create, but the
+    // system will ask on its behalf. The dialog it shows names the file and is the
+    // user's, not ours; agreeing makes the write succeed on the retry.
+    val ratingConsent by viewModel.ratingConsent.collectAsState()
+    val consentLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult(),
+    ) { result ->
+        val granted = result.resultCode == Activity.RESULT_OK
+        if (granted) viewModel.retryRatingWrite(currentUri)
+        viewModel.consentHandled(granted)
+    }
+    LaunchedEffect(ratingConsent) {
+        ratingConsent?.let { consentLauncher.launch(IntentSenderRequest.Builder(it).build()) }
+    }
     val windowLayout = rememberWindowLayout()
 
     // The backdrop is on the outer box so it reaches the screen edges; the insets are
@@ -153,6 +180,9 @@ fun ExpandedNowPlayingScreen(
                     session = session,
                     accent = accent,
                     isFavourite = currentUri in favourites,
+                    rating = rating,
+                    ratingWriteRefused = ratingWriteRefused,
+                    onRate = { viewModel.rate(currentUri, it) },
                     hasTrack = hasTrack,
                     playback = playback,
                     shuffleMode = playerSettings.shuffleMode,
@@ -278,6 +308,9 @@ private fun NowPlayingControls(
     session: PlaybackState?,
     accent: Color,
     isFavourite: Boolean,
+    rating: Int,
+    ratingWriteRefused: Boolean,
+    onRate: (Int) -> Unit,
     hasTrack: Boolean,
     playback: com.deox9.musicplayer.player.PlaybackConnection,
     shuffleMode: ShuffleMode,
@@ -327,6 +360,14 @@ private fun NowPlayingControls(
             onOpenLyrics = { onRequestDialog(PlayerDialog.Lyrics) },
             onOpenQueue = onOpenQueue,
             onOpenAudioSettings = { onRequestDialog(PlayerDialog.AudioSettings) },
+        )
+
+        StarRatingRow(
+            rating = rating,
+            enabled = hasTrack,
+            accent = accent,
+            writeRefused = ratingWriteRefused,
+            onRate = onRate,
         )
     }
 }
@@ -459,6 +500,58 @@ private fun SeekBar(
         }
     }
 }
+
+/**
+ * Stars for the current track, written into the file where the filesystem allows it.
+ *
+ * Five tappable stars rather than a slider or a menu: a rating is a coarse judgement
+ * made in a second, and anything that takes longer than that to express does not get
+ * used. Tapping the star a track already has clears the rating, which is the only way
+ * to say "actually, no opinion" — POPM has no value meaning zero stars, so the frame
+ * has to go entirely.
+ */
+@Composable
+private fun StarRatingRow(
+    rating: Int,
+    enabled: Boolean,
+    accent: Color,
+    writeRefused: Boolean,
+    onRate: (Int) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            for (star in 1..RATING_STARS) {
+                val filled = star <= rating
+                IconButton(
+                    onClick = { onRate(if (rating == star) 0 else star) },
+                    enabled = enabled,
+                ) {
+                    Icon(
+                        imageVector = if (filled) Icons.Filled.Star else Icons.Filled.StarBorder,
+                        contentDescription = "$star star${if (star == 1) "" else "s"}",
+                        tint = if (filled) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        // Said out loud rather than failing silently: the rating is kept, but it is
+        // not in the file, so another player will not see it.
+        if (writeRefused) {
+            Text(
+                text = "Saved in the app — this file is read-only, so the rating " +
+                    "could not be written into it.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 24.dp),
+            )
+        }
+    }
+}
+
+private const val RATING_STARS = 5
 
 @Composable
 private fun SecondaryActions(

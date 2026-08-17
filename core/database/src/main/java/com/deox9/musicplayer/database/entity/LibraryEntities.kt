@@ -135,6 +135,12 @@ data class TrackEntity(
     val replayGainAlbumDb: Float? = null,
     val replayGainAlbumPeak: Float? = null,
 
+    // Stars, 0-5, read from the file's own rating tag — POPM on ID3, a percentage on
+    // Vorbis and MP4. Null means the file carries no rating, which is different from
+    // a rating of zero: there is no way to say "worthless" in POPM, and the two must
+    // stay distinguishable or a rescan would invent ratings nobody gave.
+    val rating: Int? = null,
+
     val dateAddedMs: Long = 0,
     val dateModifiedMs: Long = 0,
 )

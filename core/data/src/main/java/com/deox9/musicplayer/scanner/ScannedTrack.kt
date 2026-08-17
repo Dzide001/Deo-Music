@@ -42,6 +42,7 @@ data class ScannedTrack(
     val replayGainTrackPeak: Float? = null,
     val replayGainAlbumDb: Float? = null,
     val replayGainAlbumPeak: Float? = null,
+    val rating: Int? = null,
 ) {
     /**
      * The artist an album should be filed under.

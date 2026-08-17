@@ -14,4 +14,12 @@ data class LocalTrack(
      * placeholder rather than a gap, so a mixed library does not look broken.
      */
     val artworkUri: String? = null,
+    /**
+     * Stars, 0-5, or null when the file carries no rating.
+     *
+     * Null and zero are different answers and both are worth keeping: null is "no
+     * rating in the file", zero would be a rating of zero, which POPM has no way to
+     * express.
+     */
+    val rating: Int? = null,
 )

@@ -3,6 +3,7 @@ package com.deox9.musicplayer.library
 
 import com.deox9.musicplayer.database.dao.LibraryDao
 import com.deox9.musicplayer.database.dao.TrackWithNames
+import com.deox9.musicplayer.scanner.RatingWriter
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -19,7 +20,30 @@ import javax.inject.Singleton
 @Singleton
 class RoomLibraryRepository @Inject constructor(
     private val dao: LibraryDao,
+    private val ratingWriter: RatingWriter,
 ) {
+
+    /**
+     * Rates a track, in the file where possible and in the database always.
+     *
+     * Both, and in that order, because they answer different needs. The file is what
+     * makes the rating portable — the whole reason for using POPM rather than a
+     * column of our own — and the database is what makes it survive a file the app
+     * is not allowed to write, which under scoped storage is most of them.
+     *
+     * The database write is not conditional on the file write. Someone who rates a
+     * track and is refused by the filesystem should still see their rating; losing it
+     * because of a permission they were never asked for would be the worse of the two
+     * failures. The result says which happened so the UI can be honest about it.
+     */
+    suspend fun rateTrack(mediaUri: String, stars: Int): RatingWriter.Result {
+        val filePath = dao.filePathFor(mediaUri)
+        val result = ratingWriter.write(filePath, mediaUri, stars)
+        dao.setRating(mediaUri, stars.takeIf { it > 0 })
+        return result
+    }
+
+    suspend fun ratingFor(mediaUri: String): Int = dao.ratingFor(mediaUri) ?: 0
 
     suspend fun deletePlaylist(playlistId: Long) = dao.deletePlaylist(playlistId)
 
@@ -152,4 +176,5 @@ private fun TrackWithNames.toLocalTrack(): LocalTrack = LocalTrack(
     durationMs = durationMs,
     contentUri = mediaUri,
     artworkUri = albumMediaStoreId?.let { AlbumArt.forAlbumId(it).toString() },
+    rating = rating,
 )

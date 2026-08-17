@@ -25,6 +25,8 @@ data class TrackTags(
     val replayGainTrackPeak: Float? = null,
     val replayGainAlbumDb: Float? = null,
     val replayGainAlbumPeak: Float? = null,
+    /** Stars, 0-5, however the file happened to store them. */
+    val rating: Int? = null,
 ) {
     val isEmpty: Boolean get() = this == EMPTY
 
@@ -45,6 +47,7 @@ fun ScannedTrack.mergedWith(tags: TrackTags): ScannedTrack {
 
     return copy(
         albumArtist = tags.albumArtist ?: albumArtist,
+        rating = tags.rating ?: rating,
         discNumber = tags.discNumber ?: discNumber,
         trackNumber = tags.trackNumber ?: trackNumber,
         composer = tags.composer ?: composer,
