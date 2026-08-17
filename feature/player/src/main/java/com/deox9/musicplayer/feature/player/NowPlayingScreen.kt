@@ -511,7 +511,7 @@ private fun SeekBar(
  * has to go entirely.
  */
 @Composable
-private fun StarRatingRow(
+internal fun StarRatingRow(
     rating: Int,
     enabled: Boolean,
     accent: Color,
