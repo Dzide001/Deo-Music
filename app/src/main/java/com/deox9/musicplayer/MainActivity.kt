@@ -297,26 +297,7 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
     // playback. The Now Playing screen carries the same failure inline, but only the
     // snackbar reaches them wherever they actually are, so it names the track.
     //
-    // Keyed on Unit rather than on the error, so that the service withdrawing it —
-    // which happens the moment the auto-advance lands on a track that plays, often
-    // well inside the snackbar's own duration — cancels this coroutine and cuts the
-    // message off mid-display. Each failure is collected once and then shown for as
-    // long as it takes to read, whatever the player does next.
-    LaunchedEffect(Unit) {
-        // Reads the delegated state inside the lambda, which is what makes this a
-        // tracked snapshot read; a captured local would be frozen at first composition.
-        snapshotFlow { playbackState.error }
-            .filterNotNull()
-            .distinctUntilChangedBy { it.id }
-            .collect { error ->
-                val track = error.trackTitle.ifBlank { "this track" }
-                snackbarHostState.showSnackbar(
-                    message = "Can't play $track — ${error.message}",
-                    withDismissAction = true,
-                    duration = SnackbarDuration.Long,
-                )
-            }
-    }
+    AnnouncePlaybackErrors(playbackState, snackbarHostState)
 
     if (showNowPlaying) {
         BackHandler {
@@ -472,46 +453,14 @@ private fun AppRoot(viewModel: PlayerViewModel = hiltViewModel()) {
                                 onSelect = { localTab = it }
                             )
                             Box(modifier = Modifier.weight(1f)) {
-                                when (localTab) {
-                                    LibraryTab.Songs -> LibraryScreen(
-                                        searchQuery = appliedLocalSearchQuery,
-                                        sortOption = songSortOption,
-                                        listState = listStates.songs
-                                    )
-                                    LibraryTab.Albums -> AlbumsScreen(
-                                        searchQuery = appliedLocalSearchQuery,
-                                        sortOption = albumSortOption,
-                                        listState = listStates.albums
-                                    )
-                                    LibraryTab.Artists -> ArtistsScreen(
-                                        searchQuery = appliedLocalSearchQuery,
-                                        sortOption = collectionSortOption,
-                                        listState = listStates.artists
-                                    )
-                                    LibraryTab.Playlists -> PlaylistsScreen(
-                                        searchQuery = appliedLocalSearchQuery,
-                                        sortOption = collectionSortOption,
-                                        listState = listStates.playlists
-                                    )
-                                    LibraryTab.Folders -> FoldersScreen(
-                                        searchQuery = appliedLocalSearchQuery,
-                                        sortOption = collectionSortOption,
-                                        listState = listStates.folders
-                                    )
-                                    LibraryTab.Genres -> GenresScreen(
-                                        searchQuery = appliedLocalSearchQuery,
-                                        sortOption = collectionSortOption,
-                                        listState = listStates.genres
-                                    )
-                                    LibraryTab.Suggested -> SuggestedScreen(
-                                        listState = listStates.suggested
-                                    )
-                                    LibraryTab.Favourites -> FavouritesScreen(
-                                        searchQuery = appliedLocalSearchQuery,
-                                        sortOption = songSortOption,
-                                        listState = listStates.favourites
-                                    )
-                                }
+                                LibraryTabContent(
+                                    tab = localTab,
+                                    searchQuery = appliedLocalSearchQuery,
+                                    songSortOption = songSortOption,
+                                    albumSortOption = albumSortOption,
+                                    collectionSortOption = collectionSortOption,
+                                    listStates = listStates,
+                                )
                             }
                         }
                     }
@@ -1052,4 +1001,100 @@ private fun pauseWebWhenLocalPlaybackStarts(
         }
     }
     return pausedFor
+}
+
+/**
+ * Tells the listener when a track will not play, wherever they are in the app.
+ *
+ * The Now Playing screen carries the same failure inline, but someone can be
+ * browsing the library, on another destination, or have the screen off with the
+ * notification driving playback. Only the snackbar reaches them, so it names the
+ * track rather than saying something failed.
+ *
+ * Keyed on Unit, not on the error. Keyed on the error, the service withdrawing it —
+ * which happens the moment an auto-advance lands on a track that plays, often well
+ * inside the snackbar's own duration — cancels this coroutine and cuts the message
+ * off mid-sentence. Each failure is collected once and shown for as long as it takes
+ * to read, whatever the player does next.
+ */
+@Composable
+private fun AnnouncePlaybackErrors(
+    playbackState: PlaybackState,
+    snackbarHostState: SnackbarHostState,
+) {
+    LaunchedEffect(Unit) {
+        // Read inside the lambda, which is what makes it a tracked snapshot read; a
+        // value captured outside would be frozen at first composition.
+        snapshotFlow { playbackState.error }
+            .filterNotNull()
+            .distinctUntilChangedBy { it.id }
+            .collect { error ->
+                val track = error.trackTitle.ifBlank { "this track" }
+                snackbarHostState.showSnackbar(
+                    message = "Can't play $track — ${error.message}",
+                    withDismissAction = true,
+                    duration = SnackbarDuration.Long,
+                )
+            }
+    }
+}
+
+/**
+ * The screen behind whichever library tab is selected.
+ *
+ * Lifted out of AppRoot as one piece rather than split per tab: every branch is the
+ * same shape, and what the reader needs to see is that they *are* the same shape —
+ * which tabs take which sort option, and that each one keeps its own scroll position.
+ * Spread across eight call sites in a 250-line function, an inconsistency here is
+ * invisible; gathered, it is a single column to read down.
+ */
+@Composable
+private fun LibraryTabContent(
+    tab: LibraryTab,
+    searchQuery: String,
+    songSortOption: SongSortOption,
+    albumSortOption: AlbumSortOption,
+    collectionSortOption: CollectionSortOption,
+    listStates: LibraryListStates,
+) {
+    when (tab) {
+        LibraryTab.Songs -> LibraryScreen(
+            searchQuery = searchQuery,
+            sortOption = songSortOption,
+            listState = listStates.songs
+        )
+        LibraryTab.Albums -> AlbumsScreen(
+            searchQuery = searchQuery,
+            sortOption = albumSortOption,
+            listState = listStates.albums
+        )
+        LibraryTab.Artists -> ArtistsScreen(
+            searchQuery = searchQuery,
+            sortOption = collectionSortOption,
+            listState = listStates.artists
+        )
+        LibraryTab.Playlists -> PlaylistsScreen(
+            searchQuery = searchQuery,
+            sortOption = collectionSortOption,
+            listState = listStates.playlists
+        )
+        LibraryTab.Folders -> FoldersScreen(
+            searchQuery = searchQuery,
+            sortOption = collectionSortOption,
+            listState = listStates.folders
+        )
+        LibraryTab.Genres -> GenresScreen(
+            searchQuery = searchQuery,
+            sortOption = collectionSortOption,
+            listState = listStates.genres
+        )
+        LibraryTab.Suggested -> SuggestedScreen(
+            listState = listStates.suggested
+        )
+        LibraryTab.Favourites -> FavouritesScreen(
+            searchQuery = searchQuery,
+            sortOption = songSortOption,
+            listState = listStates.favourites
+        )
+    }
 }
