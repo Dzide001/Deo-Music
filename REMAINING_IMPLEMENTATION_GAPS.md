@@ -21,9 +21,14 @@ Last verified against the code on 2026-08-17.
 
 | Item | Notes |
 | --- | --- |
-| Renovate | Dependency updates are manual, and the pinned versions in the original planning docs were wrong often enough to matter. |
 | Wider screenshot coverage | Twenty reference images cover the player's bar and rating row and the library's lists, detail and empty states. The settings sheet, the queue sidebar and the web screen have none. |
 | Seeded large library | A generated 30k-track library to test scanning and scrolling against. The real device library is ~150 tracks. |
+
+## Waiting on the repository owner
+
+| Item | What is needed |
+| --- | --- |
+| Renovate | `renovate.json5` is written and its rules check out against the real dependency catalogue, but nothing runs it. Install the Renovate GitHub App on `Dzide001/Deo-Music` (free for public repositories) and it picks the config up on its own. No pull requests appear until then. |
 
 ## Built but not verifiable here
 

@@ -1,0 +1,120 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// JSON5 rather than JSON so the reasoning can sit next to the rules. Every grouping
+// below exists because of something that actually broke this project, not because it
+// is a tidy way to arrange dependencies.
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["config:recommended"],
+
+  // A dashboard issue rather than a wall of pull requests. This is a one-person
+  // project; twelve open PRs is not a backlog, it is noise that gets ignored until
+  // it is all stale.
+  dependencyDashboard: true,
+  prConcurrentLimit: 3,
+  prHourlyLimit: 2,
+
+  // Weekly, off-hours. Android dependencies move constantly and almost none of the
+  // movement is urgent.
+  schedule: ["before 6am on monday"],
+
+  // Nothing merges itself. This project has been broken twice by a version that
+  // resolved cleanly and then failed at a completely different layer — AGP 9 against
+  // baselineprofile 1.4.1, which looks for a class the new AGP no longer registers,
+  // and the Compose screenshot plugin, which registers its tasks and then discovers
+  // no tests. Neither would have been caught by "it built".
+  automerge: false,
+
+  // Majors on their own, always. An AGP or Kotlin major is a piece of work, not a
+  // version bump, and it must not arrive attached to something harmless.
+  separateMajorMinor: true,
+  major: {
+    dependencyDashboardApproval: true,
+  },
+
+  packageRules: [
+    {
+      // Kotlin and KSP are versioned together by construction: KSP publishes
+      // <kotlin>-<ksp> and refuses to load against a compiler it was not built for.
+      // Bumping one without the other does not fail to resolve, it fails at compile
+      // time with an error that names neither.
+      groupName: "Kotlin and KSP",
+      matchPackageNames: [
+        "org.jetbrains.kotlin{/,}**",
+        "com.google.devtools.ksp{/,}**",
+      ],
+    },
+    {
+      // The BOM exists to keep these aligned; letting a single artifact move outside
+      // it defeats the point of having one.
+      groupName: "Compose",
+      matchPackageNames: [
+        "androidx.compose{/,}**",
+        "androidx.compose:compose-bom",
+      ],
+    },
+    {
+      // Room's compiler and runtime must match, and the Gradle plugin with them.
+      groupName: "Room",
+      matchPackageNames: ["androidx.room{/,}**"],
+    },
+    {
+      groupName: "Hilt",
+      matchPackageNames: [
+        "com.google.dagger{/,}**",
+        "androidx.hilt{/,}**",
+      ],
+    },
+    {
+      // Media3 is one library published as a dozen artifacts. A mixed set compiles
+      // and then throws at runtime on a version check.
+      groupName: "Media3",
+      matchPackageNames: ["androidx.media3{/,}**"],
+    },
+    {
+      // Already on pre-release versions, and stuck there: these are the newest
+      // published. Renovate will keep offering newer alphas, which is wanted — but
+      // separately, and never batched with anything that matters, because an alpha
+      // regressing is expected rather than surprising.
+      groupName: "pre-release build tooling",
+      matchPackageNames: [
+        "androidx.benchmark{/,}**",
+        "io.github.takahirom.roborazzi{/,}**",
+      ],
+      schedule: ["before 6am on the first day of the month"],
+    },
+    {
+      // AGP alone, never grouped. It is the dependency most likely to break
+      // something unrelated in this project, and it has: the toolchain notes in
+      // CLAUDE.md exist because of AGP 9's built-in Kotlin and its refusal of the
+      // kotlin-android plugin.
+      groupName: "Android Gradle Plugin",
+      matchPackageNames: ["com.android.tools.build{/,}**", "com.android{/,}**"],
+      dependencyDashboardApproval: true,
+    },
+    {
+      // Test-only libraries are the safest thing here, because a failure shows up as
+      // a red gate rather than as a shipped bug. Still not auto-merged, but batched
+      // so they cost one review instead of five.
+      groupName: "test libraries",
+      matchPackageNames: [
+        "junit{/,}**",
+        "org.robolectric{/,}**",
+        "androidx.test{/,}**",
+        "org.json:json",
+      ],
+    },
+    {
+      // Action versions drift quietly and break CI on a schedule nobody chose.
+      groupName: "GitHub Actions",
+      matchManagers: ["github-actions"],
+    },
+  ],
+
+  // The Gradle wrapper is updated deliberately, with the distribution checksum, and
+  // usually alongside AGP. An automatic bump here changes how every build on every
+  // machine runs.
+  gradle: {
+    enabled: true,
+  },
+}
