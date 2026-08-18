@@ -37,6 +37,7 @@ input this machine does not have. They are not known-broken; they are unproven.
 
 | Item | What would prove it |
 | --- | --- |
+| Widget play/pause icon following outside changes | The track a widget shows now follows the app, verified twice. Whether its play/pause icon flips when playback is paused from somewhere else was not confirmed: `adb media dispatch` kept reaching another app's session rather than this one. The state travels the same flow as the title, so it is likely fine and simply unproven. |
 | Lyrics timing nudge | A track with embedded synced lyrics. The controls only appear for synced lyrics, and nothing in the test device's library has any, so the buttons have never been pressed on hardware. The shift itself is unit-tested and the controls have reference images. |
 | Keyboard shortcuts | A physical keyboard. |
 | Foldable hinge layout | A foldable, or a hinge-emulating device profile. |

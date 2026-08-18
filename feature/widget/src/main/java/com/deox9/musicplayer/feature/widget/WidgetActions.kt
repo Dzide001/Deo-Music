@@ -8,6 +8,7 @@ import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionParametersOf
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
+import androidx.glance.appwidget.updateAll
 
 private val CommandKey = ActionParameters.Key<String>("command")
 
@@ -51,4 +52,15 @@ class OpenAppAction : ActionCallback {
         intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(intent)
     }
+}
+
+/**
+ * Redraws every placed Now Playing widget.
+ *
+ * Exposed so callers can ask for a refresh without taking Glance onto their own
+ * classpath — the widget toolkit stays an implementation detail of this module, and
+ * `:app` only has to know that widgets exist and can be asked to update.
+ */
+suspend fun refreshNowPlayingWidgets(context: Context) {
+    NowPlayingWidget().updateAll(context)
 }
