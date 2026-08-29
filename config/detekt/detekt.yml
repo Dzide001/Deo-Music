@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Layered on top of detekt's default config (buildUponDefaultConfig = true).
+# Only deviations from the defaults are listed here.
+
+build:
+  maxIssues: 0
+
+formatting:
+  active: true
+  android: true
+  MaximumLineLength:
+    active: true
+    maxLineLength: 140
+  ArgumentListWrapping:
+    active: false
+  FunctionSignature:
+    active: false
+
+complexity:
+  LongMethod:
+    # Compose screen functions are legitimately long; tightened as the UI is
+    # split out of MainActivity into feature modules.
+    threshold: 120
+  LongParameterList:
+    functionThreshold: 10
+    constructorThreshold: 10
+    ignoreAnnotated: ['Composable']
+  TooManyFunctions:
+    active: false
+  CyclomaticComplexMethod:
+    threshold: 20
+
+style:
+  MagicNumber:
+    active: false
+  MaxLineLength:
+    maxLineLength: 140
+  ReturnCount:
+    max: 5
+  UnusedPrivateMember:
+    active: true
+
+naming:
+  FunctionNaming:
+    # @Composable functions are PascalCase by convention.
+    ignoreAnnotated: ['Composable']
+
+exceptions:
+  TooGenericExceptionCaught:
+    active: false
+  SwallowedException:
+    active: false

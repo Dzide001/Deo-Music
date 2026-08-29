@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
+    <!--
+      Playback permissions and the PlaybackService itself are declared by
+      :core:media and merged in from there.
+    -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission
@@ -11,6 +14,7 @@
         android:maxSdkVersion="32" />
 
     <application
+        android:name=".DeoMusicApplication"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -28,14 +32,40 @@
             </intent-filter>
         </activity>
 
+
+        <!--
+          WorkManager's default on-demand initializer must be removed when the
+          Application supplies its own Configuration; otherwise WorkManager
+          initialises first and never sees the Hilt worker factory.
+        -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
+
+    
+        <!--
+          Quick settings tile. BIND_QUICK_SETTINGS_TILE is held by the system, not
+          requested from the user: it is how the panel is allowed to bind this, and
+          the tile still has to be added by hand before it appears.
+        -->
         <service
-            android:name=".player.PlaybackService"
+            android:name=".tile.PlaybackTileService"
             android:exported="true"
-            android:foregroundServiceType="mediaPlayback">
+            android:icon="@drawable/ic_tile_play"
+            android:label="Play/Pause"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
-                <action android:name="androidx.media3.session.MediaSessionService" />
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
-    </application>
+
+</application>
 
 </manifest>

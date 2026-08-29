@@ -97,7 +97,9 @@ fi
 SDK_PATH="$(find_android_sdk || true)"
 if [[ -n "$SDK_PATH" ]]; then
   if [[ ! -f "$PROJECT_DIR/local.properties" ]]; then
-    echo "sdk.dir=${SDK_PATH//\//\/}" > "$PROJECT_DIR/local.properties"
+    # Write the path verbatim. The previous substitution inserted stray backslashes,
+    # producing sdk.dir=\/Users\/... which Android Lint rejects as PropertyEscape.
+    echo "sdk.dir=${SDK_PATH}" > "$PROJECT_DIR/local.properties"
     echo "ℹ Created local.properties with sdk.dir=$SDK_PATH"
   fi
 else

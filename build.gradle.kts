@@ -1,4 +1,44 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 plugins {
-    id("com.android.application") version "8.5.2" apply false
-    id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+    alias(libs.plugins.android.application) apply false
+    alias(libs.plugins.android.library) apply false
+    alias(libs.plugins.kotlin.compose) apply false
+    alias(libs.plugins.kotlin.serialization) apply false
+    alias(libs.plugins.ksp) apply false
+    alias(libs.plugins.hilt) apply false
+    alias(libs.plugins.room) apply false
+    alias(libs.plugins.detekt)
+}
+
+detekt {
+    buildUponDefaultConfig = true
+    config.setFrom(rootProject.file("config/detekt/detekt.yml"))
+    // No baseline. There was one — 23 entries at its worst, almost all of it inside
+    // the oversized MainActivity.kt — and every entry is now gone rather than
+    // suppressed, so the file is deleted instead of left empty. An empty baseline is
+    // an invitation to add to it.
+    source.setFrom(
+        files(
+            "app/src/main/java",
+            "app/src/foss/java",
+            "app/src/full/java",
+            "core/model/src/main/java",
+            "core/audio/src/main/java",
+            "core/data/src/main/java",
+            "core/database/src/main/java",
+            "core/designsystem/src/main/java",
+            "core/datastore/src/main/java",
+            "core/media/src/main/java",
+            "core/ui/src/main/java",
+            "feature/player/src/main/java",
+            "feature/library/src/main/java",
+            "feature/settings/src/main/java",
+            "feature/widget/src/main/java",
+        ),
+    )
+    parallel = true
+}
+
+dependencies {
+    detektPlugins(libs.detekt.formatting)
 }

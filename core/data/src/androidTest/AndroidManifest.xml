@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      A library module's androidTest builds a self-instrumenting APK with its own
+      package, so it inherits nothing the app was granted. Without this the MediaStore
+      query returns an empty cursor, the assumption fails, and the tests skip — which
+      reads as green and proves nothing.
+    -->
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+</manifest>

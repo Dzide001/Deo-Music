@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      API 29+ follows the system light/dark setting for the window background.
+
+      windowActionBar/windowNoTitle are off because the app has never used the
+      platform action bar: DeviceDefault brings one in by default, and it was
+      drawing a band with the app label above the Compose header on every screen —
+      including the full-bleed player, which is supposed to reach the status bar.
+    -->
+    <style name="Theme.MusicPlayer" parent="android:Theme.DeviceDefault.DayNight">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>

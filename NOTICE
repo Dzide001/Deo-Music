@@ -1,0 +1,48 @@
+Deo Music
+Copyright (C) 2026 Deo Music contributors
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See the LICENSE file for the full text.
+
+================================================================================
+Third-party components
+================================================================================
+
+This product includes software developed as part of the Android Open Source
+Project and by other third parties. Apache License 2.0 requires attribution;
+Apache-2.0 code may be combined into this GPL-3.0 project, but not the reverse.
+
+--------------------------------------------------------------------------------
+Apache License 2.0
+--------------------------------------------------------------------------------
+
+  AndroidX / Jetpack (androidx.*)                 The Android Open Source Project
+    core-ktx, activity-compose, lifecycle, compose (ui, material3,
+    material-icons-extended), datastore-preferences, profileinstaller, webkit
+  AndroidX Media3 (androidx.media3)               The Android Open Source Project
+    media3-exoplayer, media3-session
+  Kotlin standard library and coroutines          JetBrains s.r.o.
+  Coil 3 (io.coil-kt.coil3)                       Coil Contributors
+
+  A copy of the Apache License 2.0 is available at:
+  https://www.apache.org/licenses/LICENSE-2.0
+
+--------------------------------------------------------------------------------
+Data sources
+--------------------------------------------------------------------------------
+
+  LRCLIB (https://lrclib.net)
+    Community-contributed synced lyrics, used for lyric lookup. No API key or
+    registration required. Lyrics remain the property of their respective
+    rights holders and are fetched on demand, not redistributed with this app.
+
+================================================================================
+Attribution completeness
+================================================================================
+
+The authoritative, generated dependency list is produced by AboutLibraries from
+the Gradle dependency graph and is shown in-app under Settings > Open source
+licenses. This file is a human-readable summary; if the two disagree, the
+generated list is correct.
